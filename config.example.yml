@@ -1,0 +1,16 @@
+# Madblog の設定
+# ドメイン（link）と Fediverse のアカウント名は .env から自動で設定されます。
+# 項目の一覧: https://git.fabiomanganiello.com/madblog の README「Configuration」
+
+title: My Blog
+description: Fediverse とつながるブログ
+language: ja-JP
+
+author: あなたの名前
+# author_photo: https://blog.example.com/img/avatar.png   # Fediverse のアイコンにもなる
+# logo: https://blog.example.com/img/logo.png
+
+# 記事を Fediverse に流すときの形式
+#   Note    … Mastodon などのタイムラインに本文がそのまま表示される
+#   Article … リンクのプレビューとして表示される
+activitypub_object_type: Note
