@@ -1,6 +1,6 @@
 baseURL = 'https://example.org/'
 locale = 'ja-jp'
-title = 'My New Hugo Project'
+title = 'JJ1GUJのブログ'
 theme = 'PaperMod'
 [markup]
   [markup.goldmark]
