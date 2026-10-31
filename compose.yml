@@ -27,6 +27,7 @@ services:
       - --destination
       - /public
       - --cleanDestinationDir
+      - --noTimes
     environment:
       HUGO_BASEURL: ${BLOG_URL:-https://${BLOG_DOMAIN}}
       HUGO_CACHEDIR: /cache
