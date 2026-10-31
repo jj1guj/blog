@@ -1,5 +1,15 @@
 services:
   hugo:
+    command:
+      - --watch
+      - --poll
+      - 700ms
+      - --destination
+      - /public
+      - --cleanDestinationDir
+      - --noTimes
+      - --noBuildLock
+      - --buildDrafts
     environment:
       HUGO_BASEURL: ${BLOG_URL:-http://127.0.0.1:${CADDY_PORT}}
 
