@@ -1,0 +1,15 @@
+services:
+  hugo:
+    image: ghcr.io/gohugoio/hugo:latest
+    pull_policy: always
+    command: server --bind 0.0.0.0 --port 1313 --buildDrafts --poll 700ms
+    ports:
+      - "1313:1313"
+    volumes:
+      - ./:/project
+      - hugo_cache:/cache
+    restart: unless-stopped
+    # user: "${UID}:${GID}"   # LinuxでUIDが1000以外の場合
+
+volumes:
+  hugo_cache:

@@ -1,0 +1,59 @@
+<style>
+.post-content a.url-preview { display: flex; gap: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 6px; text-decoration: none; box-shadow: none; }
+.url-preview .preview-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.url-preview .preview-title { display: block; font-weight: bold; }
+.url-preview .preview-description { display: block; margin-top: 8px; font-size: 14px; color: var(--secondary); }
+.url-preview .preview-host { display: block; margin-top: 8px; font-size: 12px; color: var(--secondary); }
+.post-content .url-preview img { width: 96px; height: 96px; object-fit: cover; margin: 0; flex-shrink: 0; }
+</style>
+
+<script>
+document.querySelectorAll(".post-content p").forEach(async (paragraph) => {
+  const link = paragraph.firstElementChild;
+  if (paragraph.children.length !== 1 || link?.tagName !== "A") return;
+  if (link.hasAttribute("data-no-preview")) return;
+  if (paragraph.textContent.trim() !== link.textContent.trim()) return;
+  if (link.textContent.trim() !== link.getAttribute("href")) return;
+  const url = new URL(link.href);
+  if (!["http:", "https:"].includes(url.protocol)) return;
+  if (url.origin === location.origin) return;
+
+  try {
+    const endpoint = new URL("https://api.microlink.io/");
+    endpoint.searchParams.set("url", url.href);
+    const response = await fetch(endpoint, {
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const result = await response.json();
+    if (result.status !== "success" || !result.data?.title) return;
+
+    const text = document.createElement("span");
+    text.className = "preview-text";
+    for (const [name, value] of [
+      ["title", result.data.title],
+      ["description", result.data.description],
+      ["host", url.hostname]
+    ]) {
+      if (!value) continue;
+      const element = document.createElement("span");
+      element.className = `preview-${name}`;
+      element.textContent = value;
+      text.append(element);
+    }
+    const contents = [text];
+    if (result.data.image?.url?.startsWith("https://")) {
+      const image = document.createElement("img");
+      image.src = result.data.image.url;
+      image.alt = "";
+      image.loading = "lazy";
+      image.onerror = () => { image.hidden = true; };
+      contents.push(image);
+    }
+    link.replaceChildren(...contents);
+    link.classList.add("url-preview");
+  } catch (error) {
+    console.warn("URL preview:", url.href, error);
+  }
+});
+</script>
