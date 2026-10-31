@@ -1,0 +1,29 @@
+:80 {
+	route {
+		handle_path /gc/* {
+			reverse_proxy goatcounter:8080 {
+				header_up Host {$STATS_DOMAIN}
+			}
+		}
+
+		handle /fediverse/posts.json {
+			rewrite * /posts.json
+			root * /var/lib/blog
+			file_server
+		}
+
+		@hugo file {
+			root /srv
+			try_files {path} {path}/index.html
+		}
+		handle @hugo {
+			root * /srv
+			try_files {path} {path}/index.html
+			file_server
+		}
+
+		handle {
+			reverse_proxy hollo:3000
+		}
+	}
+}
