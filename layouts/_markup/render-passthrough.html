@@ -1,0 +1,26 @@
+{{- $inner := strings.TrimSpace .Inner -}}
+{{- if eq .Type "block" -}}
+  {{- $noNumber := or
+    (strings.HasSuffix $inner `\notag`)
+    (strings.HasSuffix $inner `\nonumber`)
+    (strings.Contains $inner `\tag`)
+  -}}
+  {{- if not $noNumber -}}
+    {{- $numbers := .Page.Store.Get "equationNumbers" | default dict -}}
+    {{- $position := printf "%v" .Position -}}
+    {{- $number := index $numbers $position -}}
+    {{- if not $number -}}
+      {{- $number = add (len $numbers) 1 -}}
+      {{- .Page.Store.SetInMap "equationNumbers" $position $number -}}
+    {{- end -}}
+    {{- $inner = printf "%s\\tag{%d}" $inner $number -}}
+  {{- end -}}
+{{- end -}}
+{{- $opts := dict "displayMode" (eq .Type "block") -}}
+{{- with try (transform.ToMath $inner $opts) -}}
+  {{- with .Err -}}
+    {{- errorf "Unable to render mathematical markup with transform.ToMath: %s. See %s." . $.Position -}}
+  {{- else -}}
+    {{- .Value -}}
+  {{- end -}}
+{{- end -}}

@@ -7,6 +7,8 @@ theme = 'PaperMod'
   tag = 'topics'
 [markup]
   [markup.goldmark]
+    [markup.goldmark.parser]
+      wrapStandAloneImageWithinParagraph = false
     [markup.goldmark.renderer]
       unsafe = true
     [markup.goldmark.extensions]
@@ -16,6 +18,5 @@ theme = 'PaperMod'
           block = [['\[', '\]'], ['$$', '$$']]
           inline = [['\(', '\)'], ['$', '$']]
 [params]
-  math = true
   ShowToc = true
   TocOpen = true
