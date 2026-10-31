@@ -16,7 +16,7 @@
     {{- $inner = printf "%s\\tag{%d}" $inner $number -}}
   {{- end -}}
 {{- end -}}
-{{- $opts := dict "displayMode" (eq .Type "block") -}}
+{{- $opts := dict "displayMode" (eq .Type "block") "output" "htmlAndMathml" -}}
 {{- with try (transform.ToMath $inner $opts) -}}
   {{- with .Err -}}
     {{- errorf "Unable to render mathematical markup with transform.ToMath: %s. See %s." . $.Position -}}
