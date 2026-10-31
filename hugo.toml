@@ -2,6 +2,7 @@ baseURL = 'https://example.org/'
 locale = 'ja-jp'
 title = 'JJ1GUJのブログ'
 theme = 'PaperMod'
+defaultContentLanguage = 'ja'
 [taxonomies]
   category = 'categories'
   tag = 'topics'
