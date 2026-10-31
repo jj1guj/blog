@@ -1,0 +1,9 @@
+services:
+  hugo:
+    environment:
+      HUGO_BASEURL: ${BLOG_URL:-http://127.0.0.1:${CADDY_PORT}}
+
+  publisher:
+    environment:
+      BLOG_URL: ${BLOG_URL:-http://127.0.0.1:${CADDY_PORT}}
+      PUBLISH_ENABLED: "false"
