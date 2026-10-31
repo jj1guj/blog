@@ -81,4 +81,115 @@ document.querySelectorAll(".post-content p").forEach(async (paragraph) => {
     console.warn("URL preview:", url.href, error);
   }
 });
+
+const copyIcon = (state) => {
+  const namespace = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(namespace, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.8");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+
+  if (state === "check") {
+    const path = document.createElementNS(namespace, "path");
+    path.setAttribute("d", "m5 12 4 4L19 6");
+    svg.append(path);
+  } else if (state === "error") {
+    const path = document.createElementNS(namespace, "path");
+    path.setAttribute("d", "m18 6-12 12M6 6l12 12");
+    svg.append(path);
+  } else {
+    const back = document.createElementNS(namespace, "path");
+    back.setAttribute("d", "M8 8V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-3");
+    const front = document.createElementNS(namespace, "rect");
+    front.setAttribute("x", "3");
+    front.setAttribute("y", "8");
+    front.setAttribute("width", "12");
+    front.setAttribute("height", "13");
+    front.setAttribute("rx", "2");
+    svg.append(back, front);
+  }
+
+  return svg;
+};
+
+const copyText = async (text) => {
+  if (window.isSecureContext && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const activeElement = document.activeElement;
+  const selection = window.getSelection();
+  const ranges = selection
+    ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange())
+    : [];
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.append(textarea);
+
+  let copied;
+  try {
+    textarea.select();
+    copied = document.execCommand("copy");
+  } finally {
+    textarea.remove();
+    if (selection) {
+      selection.removeAllRanges();
+      ranges.forEach((range) => selection.addRange(range));
+    }
+    if (activeElement instanceof HTMLElement) activeElement.focus();
+  }
+  if (!copied) throw new Error("ブラウザーがコピー操作を拒否しました");
+};
+
+const copyFeedbackTimers = new WeakMap();
+document.querySelectorAll(".post-content pre > code").forEach((codeBlock) => {
+  const container = codeBlock.closest(".highlight") ?? codeBlock.parentElement;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "copy-code";
+  button.dataset.state = "idle";
+  button.setAttribute("aria-label", "コードをコピー");
+  button.setAttribute("aria-live", "polite");
+  button.title = "コードをコピー";
+  button.append(copyIcon("copy"));
+
+  button.addEventListener("click", async () => {
+    const source = codeBlock.cloneNode(true);
+    source.querySelectorAll('[style*="user-select:none"]').forEach((lineNumber) => lineNumber.remove());
+    const text = source.textContent ?? "";
+
+    try {
+      await copyText(text);
+      button.dataset.state = "copied";
+      button.setAttribute("aria-label", "コピーしました");
+      button.title = "コピーしました";
+      button.replaceChildren(copyIcon("check"));
+    } catch (error) {
+      console.error("コードのコピーに失敗しました", error);
+      button.dataset.state = "error";
+      button.setAttribute("aria-label", "コピーに失敗しました");
+      button.title = "コピーに失敗しました";
+      button.replaceChildren(copyIcon("error"));
+    }
+
+    clearTimeout(copyFeedbackTimers.get(button));
+    copyFeedbackTimers.set(button, setTimeout(() => {
+      button.dataset.state = "idle";
+      button.setAttribute("aria-label", "コードをコピー");
+      button.title = "コードをコピー";
+      button.replaceChildren(copyIcon("copy"));
+    }, 1600));
+  });
+
+  container.append(button);
+});
 </script>

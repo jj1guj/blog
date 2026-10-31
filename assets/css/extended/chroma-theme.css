@@ -2,6 +2,74 @@
   overflow: hidden;
 }
 
+.post-content .copy-code {
+  display: grid;
+  place-items: center;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--secondary);
+  cursor: pointer;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.post-content .copy-code svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.post-content .highlight > .copy-code,
+.post-content pre > .copy-code {
+  top: 8px;
+  right: 8px;
+}
+
+.post-content .highlight:hover > .copy-code,
+.post-content .highlight:focus-within > .copy-code,
+.post-content pre:hover > .copy-code,
+.post-content pre:focus-within > .copy-code {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.post-content .copy-code:hover {
+  background: var(--border);
+  color: var(--primary);
+}
+
+.post-content .copy-code[data-state="copied"] {
+  color: #2e7d32;
+}
+
+html[data-theme="dark"] .post-content .copy-code[data-state="copied"] {
+  color: #81c784;
+}
+
+.post-content .copy-code[data-state="error"] {
+  color: #cf222e;
+}
+
+.post-content .copy-code:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .post-content .copy-code {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 html[data-theme="light"] .post-content pre > code {
   background-color: var(--code-bg) !important;
   color: var(--content);
