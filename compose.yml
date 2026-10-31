@@ -20,6 +20,7 @@ services:
   hugo:
     image: ghcr.io/gohugoio/hugo:latest
     pull_policy: always
+    user: "0:0"
     command:
       - --watch
       - --poll
@@ -28,11 +29,12 @@ services:
       - /public
       - --cleanDestinationDir
       - --noTimes
+      - --noBuildLock
     environment:
       HUGO_BASEURL: ${BLOG_URL:-https://${BLOG_DOMAIN}}
       HUGO_CACHEDIR: /cache
     volumes:
-      - ./:/src
+      - ./:/src:ro
       - hugo_cache:/cache
       - hugo_public:/public
     working_dir: /src
