@@ -2,6 +2,9 @@ baseURL = 'https://example.org/'
 locale = 'ja-jp'
 title = 'JJ1GUJのブログ'
 theme = 'PaperMod'
+[taxonomies]
+  category = 'categories'
+  tag = 'topics'
 [markup]
   [markup.goldmark]
     [markup.goldmark.renderer]
