@@ -1,0 +1,58 @@
+.post-content .highlight:not(table) {
+  overflow: hidden;
+}
+
+html[data-theme="light"] .post-content pre > code {
+  background-color: var(--code-bg) !important;
+  color: var(--content);
+}
+
+html[data-theme="light"] .post-content .highlight:not(table),
+html[data-theme="light"] .post-content .highlight > div,
+html[data-theme="light"] .post-content .highlight pre,
+html[data-theme="light"] .post-content .highlight pre code {
+  background-color: #f7f7f7 !important;
+}
+
+html[data-theme="light"] .post-content .highlight pre code {
+  color: #1f2328;
+}
+
+/* Hugo が標準出力する Monokai のインライン色をライトモード向けに変換する。 */
+html[data-theme="light"] .post-content .highlight span[style*="#66d9ef" i],
+html[data-theme="light"] .post-content .highlight span[style*="#f92672" i] {
+  color: #cf222e !important;
+}
+
+html[data-theme="light"] .post-content .highlight span[style*="#a6e22e" i] {
+  color: #6639ba !important;
+}
+
+html[data-theme="light"] .post-content .highlight span[style*="#ae81ff" i] {
+  color: #0550ae !important;
+}
+
+html[data-theme="light"] .post-content .highlight span[style*="#e6db74" i] {
+  color: #0a3069 !important;
+}
+
+html[data-theme="light"] .post-content .highlight span[style*="#75715e" i],
+html[data-theme="light"] .post-content .highlight span[style*="#7f7f7f" i] {
+  color: #57606a !important;
+}
+
+html[data-theme="light"] .post-content .highlight span[style*="#f8f8f2" i] {
+  color: #1f2328 !important;
+}
+
+html[data-theme="light"] .post-content .highlight span[style*="#960050" i] {
+  color: #82071e !important;
+}
+
+html[data-theme="light"] .post-content .highlight span[style*="#1e0010" i] {
+  background-color: #ffebe9 !important;
+}
+
+html[data-theme="light"] .post-content .highlight span[style*="#3c3d38" i] {
+  background-color: #eaeef2 !important;
+}

@@ -17,6 +17,9 @@ theme = 'PaperMod'
         [markup.goldmark.extensions.passthrough.delimiters]
           block = [['\[', '\]'], ['$$', '$$']]
           inline = [['\(', '\)'], ['$', '$']]
+[markup.highlight]
+  noClasses = true
+  style = 'monokai'
 [params]
   ShowToc = true
   TocOpen = true
