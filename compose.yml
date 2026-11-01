@@ -8,6 +8,10 @@ services:
       STATS_DOMAIN: ${STATS_DOMAIN:?Set STATS_DOMAIN in .env}
     ports:
       - "127.0.0.1:${CADDY_PORT:?Set CADDY_PORT in .env}:80"
+      - "127.0.0.1:${STATS_PORT:?Set STATS_PORT in .env}:8082"
+      # 管理用。Cloudflare Tunnel には登録しない。
+      - "127.0.0.1:${HOLLO_ADMIN_PORT:-28082}:8081"
+      - "127.0.0.1:${STATS_ADMIN_PORT:-28083}:8083"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - hugo_public:/srv:ro
@@ -80,8 +84,6 @@ services:
     image: arp242/goatcounter:latest
     pull_policy: always
     command: ["serve", "-listen=:8080", "-automigrate"]
-    ports:
-      - "127.0.0.1:${STATS_PORT:?Set STATS_PORT in .env}:8080"
     volumes:
       - goatcounter_data:/home/goatcounter/goatcounter-data
     restart: unless-stopped
