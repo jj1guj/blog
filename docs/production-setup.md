@@ -32,7 +32,7 @@ cp .env.example .env
 
 ```dotenv
 BLOG_DOMAIN=blog.jj1guj.net
-STATS_DOMAIN=blog_stats.jj1guj.net
+STATS_DOMAIN=blog-stats.jj1guj.net
 BLOG_URL=
 POSTGRES_PASSWORD=（英数字の長いランダムな値）
 HOLLO_SECRET_KEY=（44 文字以上のランダムな値）
@@ -69,7 +69,7 @@ ssh -L 28082:127.0.0.1:28082 -L 28083:127.0.0.1:28083 user@server
 ## 5. GoatCounter のサイトを作る
 
 1. `http://localhost:28083/` を開きます。
-2. サイトの作成画面で、ドメイン欄が `STATS_DOMAIN` の値（`blog_stats.jj1guj.net`）になっていることを確かめます。メールアドレスとパスワードを入力して作成します。
+2. サイトの作成画面で、ドメイン欄が `STATS_DOMAIN` の値（`blog-stats.jj1guj.net`）になっていることを確かめます。メールアドレスとパスワードを入力して作成します。
 3. 「Settings」→「Site settings」で「Allow adding visitor counts on your website」を有効にして保存します。
 
 後からログインし直す場合は、`http://localhost:28083/user/new` を開きます。
@@ -81,7 +81,7 @@ cloudflared はホストの systemd で動かします。Compose には含めま
 | 公開ホスト名 | 転送先 |
 | --- | --- |
 | `blog.jj1guj.net` | `http://localhost:28080` |
-| `blog_stats.jj1guj.net` | `http://localhost:28081` |
+| `blog-stats.jj1guj.net` | `http://localhost:28081` |
 
 管理用ポート（`28082`、`28083`）は登録しないでください。Cloudflare の「Bot Fight Mode」はオフにします。オンのままだと、ほかの Fediverse サーバーからの要求が止められ、連合できません。
 
