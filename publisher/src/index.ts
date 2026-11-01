@@ -13,6 +13,7 @@ export interface FeedItem {
   contentHtml?: string;
   url: string;
   publishedAt?: string;
+  tags?: string[];
 }
 
 export interface PublishedPost {
@@ -75,6 +76,12 @@ function getElement(xml: string, name: string): string | undefined {
   return decodeXml(value);
 }
 
+function getElements(xml: string, name: string): string[] {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`<${escapedName}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${escapedName}\\s*>`, "g");
+  return Array.from(xml.matchAll(pattern), (match) => getElement(match[0], name) ?? "");
+}
+
 function normalizeBlogUrl(value: string): URL {
   let url: URL;
   try {
@@ -129,12 +136,16 @@ export function parseRss(xml: string, blogUrl: string): FeedItem[] {
     articleUrl.search = "";
     const canonicalUrl = new URL(articleUrl.pathname, baseUrl);
     const publishedAt = getElement(itemXml, "pubDate")?.trim();
+    const tags = getElements(itemXml, "category")
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
     items.push({
       path: canonicalUrl.pathname,
       title,
       contentHtml: getElement(itemXml, "content:encoded"),
       url: canonicalUrl.href,
       ...(publishedAt ? { publishedAt } : {}),
+      ...(tags.length > 0 ? { tags } : {}),
     });
   }
   return items;
@@ -144,7 +155,7 @@ export function createStatusText(item: FeedItem): string {
   if (item.contentHtml === undefined) {
     throw new Error("RSS item has no full content");
   }
-  return createArticleStatus(item.title, item.contentHtml, item.url);
+  return createArticleStatus(item.title, item.contentHtml, item.url, item.tags);
 }
 
 function emptyPostMap(): PostMap {

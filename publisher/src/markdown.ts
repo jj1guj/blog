@@ -93,7 +93,26 @@ function prepareArticle(root: HTMLElement, articleUrl: string): void {
   }
 }
 
-export function createArticleStatus(title: string, html: string, articleUrl: string): string {
+// Hollo（@fedify/markdown-it-hashtag）がハッシュタグとして認識する文字だけを残す。
+export function createHashtags(tags: readonly string[]): string {
+  const seen = new Set<string>();
+  const hashtags: string[] = [];
+  for (const tag of tags) {
+    const name = tag.normalize("NFC").match(/[\w\p{L}]+/gu)?.join("") ?? "";
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    hashtags.push(`#${name}`);
+  }
+  return hashtags.join(" ");
+}
+
+export function createArticleStatus(
+  title: string,
+  html: string,
+  articleUrl: string,
+  tags: readonly string[] = [],
+): string {
   const document = createDocument();
   const root = document.createElement("div");
   root.innerHTML = html;
@@ -170,7 +189,7 @@ export function createArticleStatus(title: string, html: string, articleUrl: str
     markdown = markdown.slice(0, index) + prefix + expression.markdown + suffix +
       markdown.slice(index + key.length);
   }
-  return [articleUrl, converter.escape(title.trim()), markdown]
+  return [articleUrl, converter.escape(title.trim()), markdown, createHashtags(tags)]
     .filter((part) => part.length > 0)
     .join("\n\n");
 }

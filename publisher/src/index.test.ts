@@ -418,3 +418,18 @@ test("Hollo の投稿ページから記事へ移動するページを書き出�
   assert.match(page, /content="0; url=https:\/\/blog\.example\/posts\/a&amp;b\/"/);
   assert.equal(await syncRemoteViewPages(mapPath, blogUrl), 0);
 });
+
+test("RSS のタグを取得し、本文の末尾にハッシュタグとして付ける", () => {
+  const tagged = item("tagged").replace(
+    "<content:encoded>",
+    "<category>プログラミング</category><category>Hugo &amp; Hollo</category><category>hugo</category><category> </category><content:encoded>",
+  );
+  const [parsed] = parseRss(feed([tagged]), blogUrl);
+  assert.deepEqual(parsed.tags, ["プログラミング", "Hugo & Hollo", "hugo"]);
+  const status = createStatusText(parsed);
+  assert.ok(status.endsWith("\n\n#プログラミング #HugoHollo #hugo"));
+
+  const [untagged] = parseRss(feed([item("untagged")]), blogUrl);
+  assert.equal(untagged.tags, undefined);
+  assert.ok(!createStatusText(untagged).includes("#"));
+});
