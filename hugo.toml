@@ -5,7 +5,12 @@ theme = 'PaperMod'
 defaultContentLanguage = 'ja'
 [taxonomies]
   category = 'categories'
-  tag = 'topics'
+  tag = 'tags'
+# Hollo の /tags/ と重ならないよう、タグのページは /topics/ に出力する。
+[permalinks.taxonomy]
+  tags = '/topics/'
+[permalinks.term]
+  tags = '/topics/:slug/'
 [markup]
   [markup.goldmark]
     [markup.goldmark.parser]
