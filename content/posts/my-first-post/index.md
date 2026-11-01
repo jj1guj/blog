@@ -1,6 +1,6 @@
 +++
 date = '2026-11-01T06:19:58Z'
-draft = true
+draft = false
 title = '初投稿'
 summary = '初カキコ、ども'
 +++
