@@ -88,6 +88,24 @@
 		handle {
 			@invalid_scheme expression `{blog_scheme} == "invalid"`
 			respond @invalid_scheme "BLOG_URL must start with http:// or https://" 500
+
+			# ブラウザーで開いたページが Hollo にもないときは、Hugo の 404 ページを返す。
+			# API や ActivityPub の 404 は Hollo の応答をそのまま返す。
+			@browser {
+				header Accept *text/html*
+				not header_regexp Accept (?i)application/(activity|ld)\+json
+			}
+			reverse_proxy @browser hollo:3000 {
+				header_up X-Forwarded-Proto {blog_scheme}
+				@not_found status 404
+				handle_response @not_found {
+					root * /srv
+					rewrite * /404.html
+					file_server {
+						status 404
+					}
+				}
+			}
 			reverse_proxy hollo:3000 {
 				header_up X-Forwarded-Proto {blog_scheme}
 			}
