@@ -1,4 +1,33 @@
+# 開発・ローカル連合確認用の設定です。本番では使わないでください。
 services:
+  caddy:
+    environment:
+      BLOG_URL: ${BLOG_URL:-http://127.0.0.1:${CADDY_PORT}}
+    networks:
+      default:
+        aliases:
+          - ${BLOG_DOMAIN}
+
+  hollo:
+    environment:
+      STORAGE_URL_BASE: ${BLOG_URL:-http://127.0.0.1:${CADDY_PORT}}/assets
+      # localhost やプライベートアドレスのサーバーとの通信を許可します。
+      ALLOW_PRIVATE_ADDRESS: "true"
+    # 中継コンテナーも Hollo の hosts ファイルを共有するため、ここで設定します。
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+  # Hollo 内の localhost を、ホストで動く Misskey の同じポートへ中継します。
+  local-fediverse-relay:
+    image: alpine/socat:latest
+    network_mode: service:hollo
+    command:
+      - TCP6-LISTEN:${LOCAL_FEDIVERSE_PORT:-61812},fork,reuseaddr,ipv6only=0
+      - TCP:host.docker.internal:${LOCAL_FEDIVERSE_PORT:-61812}
+    depends_on:
+      - hollo
+    restart: unless-stopped
+
   hugo:
     command:
       - --watch

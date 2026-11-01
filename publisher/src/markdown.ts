@@ -1,0 +1,176 @@
+import { randomUUID } from "node:crypto";
+
+import { createDocument } from "@mixmark-io/domino";
+import TurndownService from "turndown";
+import { gfm } from "turndown-plugin-gfm";
+
+const UNSUPPORTED_ELEMENTS = "audio, canvas, embed, iframe, math, object, script, style, svg, video";
+
+function extractMath(root: HTMLElement): Map<string, { markdown: string; display: boolean }> {
+  const expressions = new Map<string, { markdown: string; display: boolean }>();
+  const prefix = `PUBLISHERMATH${randomUUID().replaceAll("-", "")}X`;
+
+  for (const element of Array.from(root.querySelectorAll(".katex-display, .katex"))) {
+    if (!root.contains(element)) continue;
+    const annotation = element.querySelector('annotation[encoding="application/x-tex"]');
+    if (!annotation || annotation.textContent === null) {
+      throw new Error("数式の TeX を取得できません");
+    }
+
+    const display = element.classList.contains("katex-display");
+    const marker = root.ownerDocument.createElement(display ? "div" : "span");
+    const key = `${prefix}${expressions.size}X`;
+    const tex = annotation.textContent.trim();
+    marker.textContent = key;
+    expressions.set(key, {
+      markdown: display ? `$$\n${tex}\n$$` : `$${tex}$`,
+      display,
+    });
+    element.parentNode?.replaceChild(marker, element);
+  }
+  return expressions;
+}
+
+function absoluteUrl(value: string, articleUrl: string, image: boolean): string {
+  let url: URL;
+  try {
+    url = new URL(value, articleUrl);
+  } catch {
+    throw new Error(`${image ? "画像" : "リンク"}の URL が無効です: ${value}`);
+  }
+  const allowedProtocols = image
+    ? ["http:", "https:"]
+    : ["http:", "https:", "mailto:", "tel:", "ftp:"];
+  if (!allowedProtocols.includes(url.protocol)) {
+    throw new Error(`${image ? "画像" : "リンク"}の URL に対応していません: ${value}`);
+  }
+  return url.href;
+}
+
+function prepareArticle(root: HTMLElement, articleUrl: string): void {
+  const unsupported = root.querySelector(UNSUPPORTED_ELEMENTS);
+  if (unsupported) {
+    throw new Error(`<${unsupported.tagName.toLowerCase()}> を Markdown に変換できません`);
+  }
+
+  for (const table of Array.from(root.querySelectorAll("table"))) {
+    const row = table.querySelector("tr");
+    const cells = row ? Array.from(row.children) : [];
+    if (!row || cells.length === 0 ||
+        (row.parentElement?.tagName !== "THEAD" &&
+          !cells.every((cell) => cell.tagName === "TH"))) {
+      throw new Error("見出し行のない表を Markdown に変換できません");
+    }
+    for (const cell of Array.from(table.querySelectorAll("th, td"))) {
+      if (["rowspan", "colspan"].some((name) => {
+        const value = cell.getAttribute(name);
+        return value !== null && value !== "1";
+      })) {
+        throw new Error("セルを結合した表を Markdown に変換できません");
+      }
+      if (cell.querySelector("blockquote, br, div, figure, hr, ol, p, pre, table, ul")) {
+        throw new Error("表のセル内のブロック要素を Markdown に変換できません");
+      }
+    }
+  }
+
+  for (const link of Array.from(root.querySelectorAll("a[href]"))) {
+    if (!link.textContent?.trim() && !link.querySelector("img")) {
+      const label = link.getAttribute("aria-label")?.trim();
+      if (label) link.textContent = label;
+      else {
+        link.parentNode?.removeChild(link);
+        continue;
+      }
+    }
+    const href = link.getAttribute("href");
+    if (href !== null) link.setAttribute("href", absoluteUrl(href, articleUrl, false));
+  }
+  for (const image of Array.from(root.querySelectorAll("img"))) {
+    const src = image.getAttribute("src");
+    if (!src?.trim()) throw new Error("画像の URL がありません");
+    image.setAttribute("src", absoluteUrl(src, articleUrl, true));
+  }
+}
+
+export function createArticleStatus(title: string, html: string, articleUrl: string): string {
+  const document = createDocument();
+  const root = document.createElement("div");
+  root.innerHTML = html;
+  const expressions = extractMath(root);
+  prepareArticle(root, articleUrl);
+
+  const converter = new TurndownService({
+    headingStyle: "atx",
+    codeBlockStyle: "fenced",
+    preformattedCode: true,
+  });
+  const escape = converter.escape.bind(converter);
+  // 既存のエスケープは重ねず、数式や GFM の記号を通常の文字として残す。
+  converter.escape = (value) => escape(value.replaceAll("&", "&amp;"))
+    .replace(
+      /(?<!\\)((?:\\\\)*)([$~<>|])/g,
+      (_match, slashes: string, character: string) => `${slashes}\\${character}`,
+    );
+  converter.use(gfm);
+  converter.addRule("tableCell", {
+    filter: ["th", "td"],
+    replacement: (content, node) => {
+      const escaped = content.replace(
+        /(?<!\\)((?:\\\\)*)\|/g,
+        (_match, slashes: string) => `${slashes}\\|`,
+      );
+      const prefix = node.parentElement?.firstElementChild === node ? "| " : " ";
+      return `${prefix}${escaped} |`;
+    },
+  });
+  converter.addRule("strikethrough", {
+    filter: (node) => ["DEL", "S", "STRIKE"].includes(node.nodeName),
+    replacement: (content) => `~~${content}~~`,
+  });
+  converter.addRule("image", {
+    filter: "img",
+    replacement: (_content, node) => {
+      const source = node.getAttribute("src");
+      if (!source) throw new Error("画像の URL がありません");
+      const alt = converter.escape(node.getAttribute("alt") ?? "");
+      const title = node.getAttribute("title");
+      const titlePart = title
+        ? ` "${title.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replace(/\s*\n\s*/g, " ")}"`
+        : "";
+      return `![${alt}](${source.replace(/[\\()<>]/g, "\\$&")}${titlePart})`;
+    },
+  });
+  converter.addRule("codeBlock", {
+    filter: "pre",
+    replacement: (_content, node) => {
+      const code = node.textContent ?? "";
+      const codeElement = node.firstElementChild?.tagName === "CODE"
+        ? node.firstElementChild
+        : null;
+      const language = codeElement?.getAttribute("class")
+        ?.match(/(?:^|\s)language-([^\s]+)/)?.[1] ?? "";
+      if (language.includes("`")) throw new Error("コードブロックの言語指定が不正です");
+      const longest = Array.from(code.matchAll(/^ {0,3}(`{3,})/gm))
+        .reduce((maximum, match) => Math.max(maximum, match[1].length), 2);
+      const fence = "`".repeat(longest + 1);
+      return `\n\n${fence}${language}\n${code.replace(/\n$/, "")}\n${fence}\n\n`;
+    },
+  });
+
+  let markdown = converter.turndown(root);
+  for (const [key, expression] of expressions) {
+    const index = markdown.indexOf(key);
+    if (index < 0) throw new Error("数式を Markdown に変換できません");
+    const before = markdown.charAt(index - 1);
+    const after = markdown.charAt(index + key.length);
+    // 隣接する $ や数字で Hollo の数式区切りが誤認されないようにする。
+    const prefix = !expression.display && before === "$" ? "\u200b" : "";
+    const suffix = !expression.display && /[0-9$]/.test(after) ? "\u200b" : "";
+    markdown = markdown.slice(0, index) + prefix + expression.markdown + suffix +
+      markdown.slice(index + key.length);
+  }
+  return [articleUrl, converter.escape(title.trim()), markdown]
+    .filter((part) => part.length > 0)
+    .join("\n\n");
+}

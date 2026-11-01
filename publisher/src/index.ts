@@ -3,13 +3,14 @@ import { readFile, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const STATUS_CHARACTER_LIMIT = 500;
+import { createArticleStatus } from "./markdown.ts";
+
 const POLL_INTERVAL_MS = 30_000;
 
 export interface FeedItem {
   path: string;
   title: string;
-  introduction: string;
+  contentHtml?: string;
   url: string;
   publishedAt?: string;
 }
@@ -74,61 +75,6 @@ function getElement(xml: string, name: string): string | undefined {
   return decodeXml(value);
 }
 
-function stripHtml(value: string): string {
-  const namedEntities: Record<string, string> = {
-    amp: "&",
-    apos: "'",
-    gt: ">",
-    hellip: "…",
-    ldquo: "“",
-    lsquo: "‘",
-    lt: "<",
-    mdash: "—",
-    nbsp: " ",
-    ndash: "–",
-    quot: '"',
-    rdquo: "”",
-    rsquo: "’",
-  };
-  return decodeXml(
-    value
-      .replace(/<!--[\s\S]*?-->/g, " ")
-      .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ")
-      .replace(/<br\b[^>]*>/gi, " ")
-      .replace(/<\/(?:p|div|li|blockquote|pre)\s*>/gi, " "),
-  )
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&([a-z]+);/gi, (entity, name: string) => {
-      return namedEntities[name.toLowerCase()] ?? entity;
-    })
-    .replace(/&#x([0-9a-f]+);/gi, (entity, digits: string) => {
-      const codePoint = Number.parseInt(digits, 16);
-      return codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : entity;
-    })
-    .replace(/&#(\d+);/g, (entity, digits: string) => {
-      const codePoint = Number.parseInt(digits, 10);
-      return codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : entity;
-    })
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function extractIntroduction(itemXml: string): string {
-  const encodedContent = getElement(itemXml, "content:encoded");
-  if (encodedContent) {
-    const firstParagraph = encodedContent.match(/<p\b[^>]*>([\s\S]*?)<\/p\s*>/i);
-    if (firstParagraph) {
-      const introduction = stripHtml(firstParagraph[1]);
-      if (introduction) return introduction;
-    }
-  }
-
-  const description = getElement(itemXml, "description");
-  if (!description) return "";
-  const firstParagraph = description.match(/<p\b[^>]*>([\s\S]*?)<\/p\s*>/i);
-  return stripHtml(firstParagraph?.[1] ?? description);
-}
-
 function normalizeBlogUrl(value: string): URL {
   let url: URL;
   try {
@@ -137,16 +83,27 @@ function normalizeBlogUrl(value: string): URL {
     throw new Error("BLOG_URL は有効な URL にしてください");
   }
   if (!["http:", "https:"].includes(url.protocol) ||
-      url.pathname !== "/" || url.search || url.hash) {
+      url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
     throw new Error("BLOG_URL にはホスト名だけを指定してください");
   }
   return url;
+}
+
+function forwardedHeaders(blogUrl: string): Record<string, string> {
+  const url = normalizeBlogUrl(blogUrl);
+  return {
+    "X-Forwarded-Host": url.host,
+    "X-Forwarded-Proto": url.protocol.slice(0, -1),
+  };
 }
 
 export function parseRss(xml: string, blogUrl: string): FeedItem[] {
   if (!/<rss\b[^>]*>/i.test(xml) || !/<channel\b[^>]*>/i.test(xml) ||
       !/<\/channel\s*>/i.test(xml) || !/<\/rss\s*>/i.test(xml)) {
     throw new Error("Hugo の RSS が有効な RSS 2.0 形式ではありません");
+  }
+  if (getElement(xml, "publisher:full-content") !== "1") {
+    throw new Error("Hugo の RSS が全文投稿に対応していません。再ビルドを待ってください");
   }
   const baseUrl = normalizeBlogUrl(blogUrl);
   const items: FeedItem[] = [];
@@ -175,7 +132,7 @@ export function parseRss(xml: string, blogUrl: string): FeedItem[] {
     items.push({
       path: canonicalUrl.pathname,
       title,
-      introduction: extractIntroduction(itemXml),
+      contentHtml: getElement(itemXml, "content:encoded"),
       url: canonicalUrl.href,
       ...(publishedAt ? { publishedAt } : {}),
     });
@@ -183,39 +140,11 @@ export function parseRss(xml: string, blogUrl: string): FeedItem[] {
   return items;
 }
 
-function codePoints(value: string): string[] {
-  return Array.from(value);
-}
-
-function truncate(value: string, maxLength: number): string {
-  const characters = codePoints(value);
-  if (characters.length <= maxLength) return value;
-  if (maxLength <= 0) return "";
-  if (maxLength === 1) return "…";
-  return `${characters.slice(0, maxLength - 1).join("")}…`;
-}
-
 export function createStatusText(item: FeedItem): string {
-  const urlLength = codePoints(item.url).length;
-  const introduction = item.introduction.trim();
-  const titleBudget = STATUS_CHARACTER_LIMIT - urlLength -
-    (introduction ? 5 : 2);
-  if (titleBudget < 1) {
-    throw new Error(`記事 URL が投稿可能な文字数を超えています: ${item.path}`);
+  if (item.contentHtml === undefined) {
+    throw new Error("RSS に記事全文がありません");
   }
-  const title = truncate(item.title.trim(), titleBudget);
-  const hasIntroduction = introduction.length > 0;
-  const introductionBudget = STATUS_CHARACTER_LIMIT - codePoints(title).length -
-    urlLength - (hasIntroduction ? 4 : 2);
-  const excerpt = hasIntroduction
-    ? truncate(introduction, introductionBudget)
-    : "";
-  const parts = excerpt ? [title, excerpt, item.url] : [title, item.url];
-  const status = parts.join("\n\n");
-  if (codePoints(status).length > STATUS_CHARACTER_LIMIT) {
-    throw new Error(`投稿本文が ${STATUS_CHARACTER_LIMIT} 文字を超えています: ${item.path}`);
-  }
-  return status;
+  return createArticleStatus(item.title, item.contentHtml, item.url);
 }
 
 function emptyPostMap(): PostMap {
@@ -320,8 +249,34 @@ function getStatusResponse(value: unknown): PublishedPost {
   };
 }
 
+async function getStatusCharacterLimit(options: PublisherOptions): Promise<number> {
+  const endpoint = new URL("/api/v2/instance", options.holloApiUrl);
+  const response = await (options.fetchImpl ?? fetch)(endpoint, {
+    headers: forwardedHeaders(options.blogUrl),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) {
+    throw new Error(`Hollo の投稿文字数上限を取得できません: HTTP ${response.status}`);
+  }
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new Error("Hollo のインスタンス情報を JSON として読み取れません");
+  }
+  if (!isRecord(body) || !isRecord(body.configuration) ||
+      !isRecord(body.configuration.statuses) ||
+      typeof body.configuration.statuses.max_characters !== "number" ||
+      !Number.isSafeInteger(body.configuration.statuses.max_characters) ||
+      body.configuration.statuses.max_characters <= 0) {
+    throw new Error("Hollo の投稿文字数上限が不正です");
+  }
+  return body.configuration.statuses.max_characters;
+}
+
 async function createStatus(
   item: FeedItem,
+  status: string,
   options: PublisherOptions,
 ): Promise<PublishedPost> {
   const endpoint = new URL("/api/v1/statuses", options.holloApiUrl);
@@ -329,12 +284,13 @@ async function createStatus(
   const response = await (options.fetchImpl ?? fetch)(endpoint, {
     method: "POST",
     headers: {
+      ...forwardedHeaders(options.blogUrl),
       Authorization: `Bearer ${options.accessToken}`,
       "Content-Type": "application/json",
       "Idempotency-Key": idempotencyKey,
     },
     body: JSON.stringify({
-      status: createStatusText(item),
+      status,
       visibility: "public",
       language: "ja",
     }),
@@ -377,18 +333,37 @@ export async function publishNewItems(
     return { baselineSkipped: items.length, published: 0 };
   }
 
+  if (!postMap.initialized) {
+    postMap.initialized = true;
+    await savePostMap(options.mapPath, postMap);
+  }
+  if (newItems.length === 0) return { baselineSkipped: 0, published: 0 };
+
+  const characterLimit = await getStatusCharacterLimit(options);
   let published = 0;
+  const failures: string[] = [];
   for (const item of newItems) {
-    const post = await createStatus(item, options);
+    if (seenPaths.has(item.path)) continue;
+    let post: PublishedPost;
+    try {
+      const status = createStatusText(item);
+      const length = Array.from(status).length;
+      if (length > characterLimit) {
+        throw new Error(`投稿本文は ${length} 文字です（Hollo の公称上限は ${characterLimit} 文字）`);
+      }
+      post = await createStatus(item, status, options);
+    } catch (error) {
+      failures.push(`${item.path}: ${errorMessage(error)}`);
+      continue;
+    }
     postMap.seenPaths.push(item.path);
     postMap.posts[item.path] = post;
     await savePostMap(options.mapPath, postMap);
     seenPaths.add(item.path);
     published++;
   }
-  if (!postMap.initialized) {
-    postMap.initialized = true;
-    await savePostMap(options.mapPath, postMap);
+  if (failures.length > 0) {
+    throw new Error(`記事 ${failures.length} 件の投稿に失敗しました:\n${failures.join("\n")}`);
   }
   return { baselineSkipped: 0, published };
 }
