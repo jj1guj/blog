@@ -1,3 +1,10 @@
+/* Vivaldi のページ全体撮影では、macOS の既定の等幅フォント（Courier）とコード内の日本語（Hiragino Sans）が別の字形で描かれる。
+   正しく撮影できる本文と同じシステム UI 系のフォントを使う。 */
+.post-content pre,
+.post-content code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", -apple-system, BlinkMacSystemFont, monospace;
+}
+
 .post-content .highlight:not(table) {
   overflow: hidden;
 }
