@@ -321,7 +321,27 @@ Misskey のタイムラインで、次の点を確認します。
 - タイトルと本文が続くこと
 - 末尾の「確認終了。」まで届いていること
 
-## 11. 終了後の片付け
+## 11. 閲覧数を表示する
+
+表示を確認するだけなら、GoatCounterのサイト作成は不要です。閲覧数を取得できない場合は0を仮表示し、横に `!` を添えます。
+
+実際の閲覧数を表示するには、GoatCounterのサイトを作成します。`blog-fedi-test` は既存環境と別のGoatCounterデータを使います。すでに作成済みの場合は、設定画面の確認から進めてください。
+
+1. 次の例の `stats.example.com` を `.env` の `STATS_DOMAIN` の値に、`you@example.com` をログインに使うメールアドレスに置き換えて実行します。パスワードは対話形式で入力します。
+
+   ```sh
+   docker compose -p blog-fedi-test -f compose.yml -f compose.dev.yml \
+     exec goatcounter goatcounter db create site \
+     -vhost stats.example.com -user.email you@example.com
+   ```
+
+2. `http://localhost:28081/user/new` を開き、作成したアカウントでログインします。ポートを変更している場合は、`.env` の `STATS_PORT` に置き換えてください。
+3. 「Settings」→「Site settings」で「Allow adding visitor counts on your website」を有効にして保存します。
+4. 記事ページを再読み込みします。記録がなければ閲覧数は0と表示されます。`localhost` で開いたページは、GoatCounterの既定の設定では計測されません。`blog.local` は既定の除外対象ではありません。
+
+GoatCounterのサイトが未作成の場合、`/gc/counter/` への要求は `307` と `Location: /` を返します。設定を保存しても閲覧数が表示されない場合は、ブラウザーの開発者コンソールで `Failed to load GoatCounter pageview count` を確認してください。`403` の場合は、手順3の設定を確認します。
+
+## 12. 終了後の片付け
 
 1. テスト用の環境を停止します。ボリュームは削除されません。
 

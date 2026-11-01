@@ -34,6 +34,7 @@ services:
     environment:
       HUGO_BASEURL: ${BLOG_URL:-https://${BLOG_DOMAIN}}
       HUGO_CACHEDIR: /cache
+      HUGO_PARAMS_MEDIAPROXYURL: ${MEDIA_PROXY_URL:-}
     volumes:
       - ./:/src:ro
       - hugo_cache:/cache
