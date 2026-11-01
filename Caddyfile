@@ -26,6 +26,12 @@
 					header_up Host {$STATS_DOMAIN}
 				}
 			}
+			# GoatCounter は閲覧数に 30 分の Expires を付けるため、ブラウザーにキャッシュさせない。
+			@goatcounter_counter path /counter/*
+			header @goatcounter_counter {
+				Cache-Control no-store
+				-Expires
+			}
 			handle {
 				respond "Not Found" 404
 			}
