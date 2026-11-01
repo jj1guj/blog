@@ -149,7 +149,7 @@ const copyText = async (text) => {
     }
     if (activeElement instanceof HTMLElement) activeElement.focus();
   }
-  if (!copied) throw new Error("ブラウザーがコピー操作を拒否しました");
+  if (!copied) throw new Error("The browser rejected the copy command");
 };
 
 const copyFeedbackTimers = new WeakMap();
@@ -176,7 +176,7 @@ document.querySelectorAll(".post-content pre > code").forEach((codeBlock) => {
       button.title = "コピーしました";
       button.replaceChildren(copyIcon("check"));
     } catch (error) {
-      console.error("コードのコピーに失敗しました", error);
+      console.error("Failed to copy code", error);
       button.dataset.state = "error";
       button.setAttribute("aria-label", "コピーに失敗しました");
       button.title = "コピーに失敗しました";

@@ -102,11 +102,11 @@ test("旧形式の RSS、不正な RSS、HTTP 以外の記事 URL を拒否す�
   assert.throws(() => parseRss("<rss><channel>", blogUrl), /RSS 2.0/);
   assert.throws(
     () => parseRss(feed([item("old")]).replace("<publisher:full-content>1</publisher:full-content>", ""), blogUrl),
-    /全文投稿に対応していません/,
+    /does not include full content/,
   );
   assert.throws(
     () => parseRss(feed(["<item><title>記事</title><link>javascript:alert(1)</link></item>"]), blogUrl),
-    /HTTP または HTTPS/,
+    /must be HTTP or HTTPS/,
   );
 });
 
@@ -171,13 +171,13 @@ test("行内数式の隣に数字や別の数式がある場合も区切りを�
 test("全文の欠落や変換できない要素を明示的に拒否する", () => {
   assert.throws(
     () => createStatusText({ path: "/posts/missing/", title: "題名", url: `${blogUrl}/posts/missing/` }),
-    /記事全文がありません/,
+    /has no full content/,
   );
   assert.throws(() => createStatusText(article("video", "動画", "<iframe></iframe>")), /iframe/);
-  assert.throws(() => createStatusText(article("image", "画像", '<img src="data:image/png;base64,AA">')), /対応していません/);
-  assert.throws(() => createStatusText(article("table", "表", "<table><tr><td>値</td></tr></table>")), /見出し行のない表/);
-  assert.throws(() => createStatusText(article("table", "表", "<table><thead><tr><th>項目</th></tr></thead><tbody><tr><td>一<br>二</td></tr></tbody></table>")), /セル内のブロック要素/);
-  assert.throws(() => createStatusText(article("math", "数式", '<span class="katex">表示</span>')), /数式の TeX/);
+  assert.throws(() => createStatusText(article("image", "画像", '<img src="data:image/png;base64,AA">')), /Unsupported image URL/);
+  assert.throws(() => createStatusText(article("table", "表", "<table><tr><td>値</td></tr></table>")), /without a header row/);
+  assert.throws(() => createStatusText(article("table", "表", "<table><thead><tr><th>項目</th></tr></thead><tbody><tr><td>一<br>二</td></tr></tbody></table>")), /inside table cells/);
+  assert.throws(() => createStatusText(article("math", "数式", '<span class="katex">表示</span>')), /TeX from math/);
 });
 
 test("旧形式の RSS では初回の投稿済み状態を記録しない", async (t) => {
@@ -191,7 +191,7 @@ test("旧形式の RSS では初回の投稿済み状態を記録しない", asy
   const mock = mockHollo();
   const config = options(feedPath, join(directory, "posts.json"), mock.fetchImpl);
 
-  await assert.rejects(publishNewItems(config), /全文投稿に対応していません/);
+  await assert.rejects(publishNewItems(config), /does not include full content/);
   assert.equal(mock.calls.length, 0);
   const mapping = await loadPostMap(config.mapPath);
   assert.equal(mapping.initialized, false);
@@ -289,7 +289,7 @@ test("公称上限ちょうどは投稿し、1 文字超過は記録せず、他
   const mock = mockHollo(limit);
   const config = options(feedPath, mapPath, mock.fetchImpl, true);
 
-  await assert.rejects(publishNewItems(config), /\/posts\/long\/.*10001 文字.*10000 文字/);
+  await assert.rejects(publishNewItems(config), /\/posts\/long\/.*10001 characters.*limit: 10000/);
   let posts = mock.calls.filter((call) => call.url.endsWith("/api/v1/statuses"));
   assert.equal(posts.length, 2);
   assert.equal(Array.from(JSON.parse(String(posts[0].init.body)).status).length, limit);
@@ -319,7 +319,7 @@ test("全文が欠けた記事を記録せず、ほかの記事を投稿する",
   const mock = mockHollo();
   const config = options(feedPath, join(directory, "posts.json"), mock.fetchImpl, true);
 
-  await assert.rejects(publishNewItems(config), /\/posts\/missing\/.*記事全文がありません/);
+  await assert.rejects(publishNewItems(config), /\/posts\/missing\/.*has no full content/);
   const mapping = await loadPostMap(config.mapPath);
   assert.deepEqual(mapping.seenPaths, ["/posts/valid/"]);
   assert.ok(mapping.posts["/posts/valid/"]);
@@ -330,9 +330,9 @@ test("全文が欠けた記事を記録せず、ほかの記事を投稿する",
 test("Hollo の公称上限が取得できない場合は投稿しない", async (t) => {
   const cases: Array<{ name: string; response: () => Response; pattern: RegExp }> = [
     { name: "HTTP エラー", response: () => new Response("", { status: 503 }), pattern: /HTTP 503/ },
-    { name: "不正な JSON", response: () => new Response("{"), pattern: /JSON として読み取れません/ },
-    { name: "上限なし", response: () => Response.json({ configuration: { statuses: {} } }), pattern: /文字数上限が不正/ },
-    { name: "上限が 0", response: () => Response.json({ configuration: { statuses: { max_characters: 0 } } }), pattern: /文字数上限が不正/ },
+    { name: "不正な JSON", response: () => new Response("{"), pattern: /Failed to parse Hollo instance info as JSON/ },
+    { name: "上限なし", response: () => Response.json({ configuration: { statuses: {} } }), pattern: /character limit is invalid/ },
+    { name: "上限が 0", response: () => Response.json({ configuration: { statuses: { max_characters: 0 } } }), pattern: /character limit is invalid/ },
   ];
   for (const testCase of cases) {
     await t.test(testCase.name, async (subtest) => {
@@ -382,7 +382,7 @@ test("投稿対応表が壊れている場合は空の状態へ置き換えな�
   t.after(() => rm(directory, { recursive: true, force: true }));
   const mapPath = join(directory, "posts.json");
   await writeFile(mapPath, "{broken");
-  await assert.rejects(loadPostMap(mapPath), /JSON を読み取れません/);
+  await assert.rejects(loadPostMap(mapPath), /Failed to parse post map JSON/);
 });
 
 test("環境変数の真偽値を検証し、トークン未設定を空文字として扱う", () => {
@@ -393,6 +393,6 @@ test("環境変数の真偽値を検証し、トークン未設定を空文字�
   assert.equal(config.enabled, false);
   assert.equal(config.publishExistingOnFirstRun, false);
   assert.equal(config.accessToken, "");
-  assert.throws(() => readConfig({ PUBLISH_ENABLED: "yes" }), /true または false/);
-  assert.throws(() => readConfig({ BLOG_URL: "https://user:password@blog.example/" }), /ホスト名だけ/);
+  assert.throws(() => readConfig({ PUBLISH_ENABLED: "yes" }), /true or false/);
+  assert.throws(() => readConfig({ BLOG_URL: "https://user:password@blog.example/" }), /only a scheme and host/);
 });

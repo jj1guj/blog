@@ -14,7 +14,7 @@ function extractMath(root: HTMLElement): Map<string, { markdown: string; display
     if (!root.contains(element)) continue;
     const annotation = element.querySelector('annotation[encoding="application/x-tex"]');
     if (!annotation || annotation.textContent === null) {
-      throw new Error("数式の TeX を取得できません");
+      throw new Error("Cannot extract TeX from math");
     }
 
     const display = element.classList.contains("katex-display");
@@ -36,13 +36,13 @@ function absoluteUrl(value: string, articleUrl: string, image: boolean): string 
   try {
     url = new URL(value, articleUrl);
   } catch {
-    throw new Error(`${image ? "画像" : "リンク"}の URL が無効です: ${value}`);
+    throw new Error(`Invalid ${image ? "image" : "link"} URL: ${value}`);
   }
   const allowedProtocols = image
     ? ["http:", "https:"]
     : ["http:", "https:", "mailto:", "tel:", "ftp:"];
   if (!allowedProtocols.includes(url.protocol)) {
-    throw new Error(`${image ? "画像" : "リンク"}の URL に対応していません: ${value}`);
+    throw new Error(`Unsupported ${image ? "image" : "link"} URL: ${value}`);
   }
   return url.href;
 }
@@ -50,7 +50,7 @@ function absoluteUrl(value: string, articleUrl: string, image: boolean): string 
 function prepareArticle(root: HTMLElement, articleUrl: string): void {
   const unsupported = root.querySelector(UNSUPPORTED_ELEMENTS);
   if (unsupported) {
-    throw new Error(`<${unsupported.tagName.toLowerCase()}> を Markdown に変換できません`);
+    throw new Error(`Cannot convert <${unsupported.tagName.toLowerCase()}> to Markdown`);
   }
 
   for (const table of Array.from(root.querySelectorAll("table"))) {
@@ -59,17 +59,17 @@ function prepareArticle(root: HTMLElement, articleUrl: string): void {
     if (!row || cells.length === 0 ||
         (row.parentElement?.tagName !== "THEAD" &&
           !cells.every((cell) => cell.tagName === "TH"))) {
-      throw new Error("見出し行のない表を Markdown に変換できません");
+      throw new Error("Cannot convert a table without a header row to Markdown");
     }
     for (const cell of Array.from(table.querySelectorAll("th, td"))) {
       if (["rowspan", "colspan"].some((name) => {
         const value = cell.getAttribute(name);
         return value !== null && value !== "1";
       })) {
-        throw new Error("セルを結合した表を Markdown に変換できません");
+        throw new Error("Cannot convert a table with merged cells to Markdown");
       }
       if (cell.querySelector("blockquote, br, div, figure, hr, ol, p, pre, table, ul")) {
-        throw new Error("表のセル内のブロック要素を Markdown に変換できません");
+        throw new Error("Cannot convert block elements inside table cells to Markdown");
       }
     }
   }
@@ -88,7 +88,7 @@ function prepareArticle(root: HTMLElement, articleUrl: string): void {
   }
   for (const image of Array.from(root.querySelectorAll("img"))) {
     const src = image.getAttribute("src");
-    if (!src?.trim()) throw new Error("画像の URL がありません");
+    if (!src?.trim()) throw new Error("Image has no URL");
     image.setAttribute("src", absoluteUrl(src, articleUrl, true));
   }
 }
@@ -132,7 +132,7 @@ export function createArticleStatus(title: string, html: string, articleUrl: str
     filter: "img",
     replacement: (_content, node) => {
       const source = node.getAttribute("src");
-      if (!source) throw new Error("画像の URL がありません");
+      if (!source) throw new Error("Image has no URL");
       const alt = converter.escape(node.getAttribute("alt") ?? "");
       const title = node.getAttribute("title");
       const titlePart = title
@@ -150,7 +150,7 @@ export function createArticleStatus(title: string, html: string, articleUrl: str
         : null;
       const language = codeElement?.getAttribute("class")
         ?.match(/(?:^|\s)language-([^\s]+)/)?.[1] ?? "";
-      if (language.includes("`")) throw new Error("コードブロックの言語指定が不正です");
+      if (language.includes("`")) throw new Error("Invalid code block language");
       const longest = Array.from(code.matchAll(/^ {0,3}(`{3,})/gm))
         .reduce((maximum, match) => Math.max(maximum, match[1].length), 2);
       const fence = "`".repeat(longest + 1);
@@ -161,7 +161,7 @@ export function createArticleStatus(title: string, html: string, articleUrl: str
   let markdown = converter.turndown(root);
   for (const [key, expression] of expressions) {
     const index = markdown.indexOf(key);
-    if (index < 0) throw new Error("数式を Markdown に変換できません");
+    if (index < 0) throw new Error("Cannot convert math to Markdown");
     const before = markdown.charAt(index - 1);
     const after = markdown.charAt(index + key.length);
     // 隣接する $ や数字で Hollo の数式区切りが誤認されないようにする。

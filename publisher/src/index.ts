@@ -80,11 +80,11 @@ function normalizeBlogUrl(value: string): URL {
   try {
     url = new URL(value);
   } catch {
-    throw new Error("BLOG_URL は有効な URL にしてください");
+    throw new Error("BLOG_URL must be a valid URL");
   }
   if (!["http:", "https:"].includes(url.protocol) ||
       url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
-    throw new Error("BLOG_URL にはホスト名だけを指定してください");
+    throw new Error("BLOG_URL must contain only a scheme and host");
   }
   return url;
 }
@@ -100,10 +100,10 @@ function forwardedHeaders(blogUrl: string): Record<string, string> {
 export function parseRss(xml: string, blogUrl: string): FeedItem[] {
   if (!/<rss\b[^>]*>/i.test(xml) || !/<channel\b[^>]*>/i.test(xml) ||
       !/<\/channel\s*>/i.test(xml) || !/<\/rss\s*>/i.test(xml)) {
-    throw new Error("Hugo の RSS が有効な RSS 2.0 形式ではありません");
+    throw new Error("Hugo RSS is not valid RSS 2.0");
   }
   if (getElement(xml, "publisher:full-content") !== "1") {
-    throw new Error("Hugo の RSS が全文投稿に対応していません。再ビルドを待ってください");
+    throw new Error("Hugo RSS does not include full content; waiting for rebuild");
   }
   const baseUrl = normalizeBlogUrl(blogUrl);
   const items: FeedItem[] = [];
@@ -113,17 +113,17 @@ export function parseRss(xml: string, blogUrl: string): FeedItem[] {
     const title = getElement(itemXml, "title")?.trim();
     const link = getElement(itemXml, "link")?.trim();
     if (!title || !link) {
-      throw new Error("Hugo の RSS 記事にタイトルまたは URL がありません");
+      throw new Error("Hugo RSS item has no title or URL");
     }
 
     let articleUrl: URL;
     try {
       articleUrl = new URL(link, baseUrl);
     } catch {
-      throw new Error(`RSS 記事の URL が無効です: ${link}`);
+      throw new Error(`Invalid RSS item URL: ${link}`);
     }
     if (!["http:", "https:"].includes(articleUrl.protocol)) {
-      throw new Error(`RSS 記事の URL は HTTP または HTTPS にしてください: ${link}`);
+      throw new Error(`RSS item URL must be HTTP or HTTPS: ${link}`);
     }
     articleUrl.hash = "";
     articleUrl.search = "";
@@ -142,7 +142,7 @@ export function parseRss(xml: string, blogUrl: string): FeedItem[] {
 
 export function createStatusText(item: FeedItem): string {
   if (item.contentHtml === undefined) {
-    throw new Error("RSS に記事全文がありません");
+    throw new Error("RSS item has no full content");
   }
   return createArticleStatus(item.title, item.contentHtml, item.url);
 }
@@ -165,14 +165,14 @@ function parsePostMap(contents: string): PostMap {
   try {
     value = JSON.parse(contents);
   } catch {
-    throw new Error("投稿対応表の JSON を読み取れません");
+    throw new Error("Failed to parse post map JSON");
   }
   if (!isRecord(value) || value.version !== 1 ||
       typeof value.initialized !== "boolean" ||
       !Array.isArray(value.seenPaths) ||
       !value.seenPaths.every((path) => typeof path === "string" && path.startsWith("/")) ||
       !isRecord(value.posts)) {
-    throw new Error("投稿対応表の形式が正しくありません");
+    throw new Error("Post map has an invalid format");
   }
   const posts: Record<string, PublishedPost> = Object.create(null) as Record<
     string,
@@ -181,7 +181,7 @@ function parsePostMap(contents: string): PostMap {
   for (const [path, rawPost] of Object.entries(value.posts)) {
     if (!path.startsWith("/") || !isRecord(rawPost) ||
         typeof rawPost.id !== "string" || typeof rawPost.url !== "string") {
-      throw new Error("投稿対応表に形式が正しくない記事があります");
+      throw new Error("Post map contains an invalid entry");
     }
     posts[path] = {
       id: rawPost.id,
@@ -229,16 +229,16 @@ export async function savePostMap(
 function getStatusResponse(value: unknown): PublishedPost {
   if (!isRecord(value) || typeof value.id !== "string" ||
       typeof value.url !== "string") {
-    throw new Error("Hollo の投稿応答に投稿 ID または URL がありません");
+    throw new Error("Hollo status response has no id or url");
   }
   let url: URL;
   try {
     url = new URL(value.url);
   } catch {
-    throw new Error("Hollo の投稿応答に有効な投稿 URL がありません");
+    throw new Error("Hollo status response has an invalid url");
   }
   if (!["http:", "https:"].includes(url.protocol)) {
-    throw new Error("Hollo の投稿 URL は HTTP または HTTPS にしてください");
+    throw new Error("Hollo status url must be HTTP or HTTPS");
   }
   return {
     id: value.id,
@@ -256,20 +256,20 @@ async function getStatusCharacterLimit(options: PublisherOptions): Promise<numbe
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) {
-    throw new Error(`Hollo の投稿文字数上限を取得できません: HTTP ${response.status}`);
+    throw new Error(`Failed to get Hollo character limit: HTTP ${response.status}`);
   }
   let body: unknown;
   try {
     body = await response.json();
   } catch {
-    throw new Error("Hollo のインスタンス情報を JSON として読み取れません");
+    throw new Error("Failed to parse Hollo instance info as JSON");
   }
   if (!isRecord(body) || !isRecord(body.configuration) ||
       !isRecord(body.configuration.statuses) ||
       typeof body.configuration.statuses.max_characters !== "number" ||
       !Number.isSafeInteger(body.configuration.statuses.max_characters) ||
       body.configuration.statuses.max_characters <= 0) {
-    throw new Error("Hollo の投稿文字数上限が不正です");
+    throw new Error("Hollo character limit is invalid");
   }
   return body.configuration.statuses.max_characters;
 }
@@ -297,13 +297,13 @@ async function createStatus(
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) {
-    throw new Error(`Hollo への投稿に失敗しました: HTTP ${response.status}`);
+    throw new Error(`Failed to post to Hollo: HTTP ${response.status}`);
   }
   let responseBody: unknown;
   try {
     responseBody = await response.json();
   } catch {
-    throw new Error("Hollo の投稿応答を JSON として読み取れません");
+    throw new Error("Failed to parse Hollo status response as JSON");
   }
   return getStatusResponse(responseBody);
 }
@@ -349,7 +349,7 @@ export async function publishNewItems(
       const status = createStatusText(item);
       const length = Array.from(status).length;
       if (length > characterLimit) {
-        throw new Error(`投稿本文は ${length} 文字です（Hollo の公称上限は ${characterLimit} 文字）`);
+        throw new Error(`Status is ${length} characters (Hollo limit: ${characterLimit})`);
       }
       post = await createStatus(item, status, options);
     } catch (error) {
@@ -363,7 +363,7 @@ export async function publishNewItems(
     published++;
   }
   if (failures.length > 0) {
-    throw new Error(`記事 ${failures.length} 件の投稿に失敗しました:\n${failures.join("\n")}`);
+    throw new Error(`Failed to publish ${failures.length} post(s):\n${failures.join("\n")}`);
   }
   return { baselineSkipped: 0, published };
 }
@@ -373,7 +373,7 @@ function parseBoolean(name: string, value: string | undefined, defaultValue: boo
   const normalized = value.trim().toLowerCase();
   if (normalized === "true") return true;
   if (normalized === "false") return false;
-  throw new Error(`${name} は true または false にしてください`);
+  throw new Error(`${name} must be true or false`);
 }
 
 function normalizeApiUrl(value: string): string {
@@ -381,10 +381,10 @@ function normalizeApiUrl(value: string): string {
   try {
     url = new URL(value);
   } catch {
-    throw new Error("HOLLO_API_URL は有効な URL にしてください");
+    throw new Error("HOLLO_API_URL must be a valid URL");
   }
   if (!["http:", "https:"].includes(url.protocol) || url.search || url.hash) {
-    throw new Error("HOLLO_API_URL には HTTP または HTTPS の URL を指定してください");
+    throw new Error("HOLLO_API_URL must be an HTTP or HTTPS URL");
   }
   return url.href;
 }
@@ -414,13 +414,13 @@ function errorMessage(error: unknown): string {
 async function main(): Promise<void> {
   const config = readConfig(process.env);
   if (!config.enabled) {
-    console.info("[publisher] 自動投稿は無効です");
+    console.info("[publisher] Publishing is disabled");
   } else if (!config.accessToken) {
     console.error(
-      "[publisher] HOLLO_ACCESS_TOKEN が未設定のため投稿を待機します。トークンを設定して publisher を再起動してください",
+      "[publisher] HOLLO_ACCESS_TOKEN is not set; waiting. Set the token and recreate publisher",
     );
   } else {
-    console.info("[publisher] Hugo RSS の監視を開始しました");
+    console.info("[publisher] Watching Hugo RSS");
   }
 
   while (true) {
@@ -429,14 +429,14 @@ async function main(): Promise<void> {
         const result = await publishNewItems(config);
         if (result.baselineSkipped > 0) {
           console.info(
-            `[publisher] 初回起動時の記事 ${result.baselineSkipped} 件を投稿せず記録しました`,
+            `[publisher] Recorded ${result.baselineSkipped} existing post(s) without publishing`,
           );
         }
         if (result.published > 0) {
-          console.info(`[publisher] 新しい記事を ${result.published} 件投稿しました`);
+          console.info(`[publisher] Published ${result.published} new post(s)`);
         }
       } catch (error) {
-        console.error(`[publisher] 投稿処理に失敗しました: ${errorMessage(error)}`);
+        console.error(`[publisher] Publishing failed: ${errorMessage(error)}`);
       }
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, POLL_INTERVAL_MS));
@@ -446,7 +446,7 @@ async function main(): Promise<void> {
 const invokedPath = process.argv[1];
 if (invokedPath && resolve(invokedPath) === fileURLToPath(import.meta.url)) {
   main().catch((error: unknown) => {
-    console.error(`[publisher] 起動に失敗しました: ${errorMessage(error)}`);
+    console.error(`[publisher] Startup failed: ${errorMessage(error)}`);
     process.exitCode = 1;
   });
 }
