@@ -1,6 +1,6 @@
 # ローカルの Misskey との連合確認
 
-Cloudflare Tunnel を使わずに、手元で動かしている Misskey（Jiskey）から次の操作を確認する手順です。
+Cloudflare Tunnel を使わずに、手元で動かしている Misskeyから次の操作を確認する手順です。
 
 - ブログのアカウントの検索
 - フォロー
@@ -12,7 +12,7 @@ Cloudflare Tunnel を使わずに、手元で動かしている Misskey（Jiskey
 
 テスト用のハンドルは `@blog@blog.local` です。ポートを含まないホスト名を使う理由は次のとおりです。
 
-- Misskey は `localhost:28080` のようなポート付きのホスト名を、自サーバー（`localhost:61812`）と同じホストとして扱います（Jiskey の `UtilityService.toPuny()` で確認）。そのため `@blog@localhost:28080` は照会できません。
+- Misskey は `localhost:28080` のようなポート付きのホスト名を、自サーバー（`localhost:61812`）と同じホストとして扱います（Misskey の `UtilityService.toPuny()` で確認）。そのため `@blog@localhost:28080` は照会できません。
 - `http://blog.local` は既定でポート80に接続しようとします。ホストの80番を開かないよう、ローカル専用のプロキシ [tools/local-fediverse-proxy.cjs](../tools/local-fediverse-proxy.cjs) を経由して Caddy の `28080` へ届けます。
 
 ```text
@@ -159,14 +159,14 @@ proxyBypassHosts:
 Misskey を `Ctrl+C` で止め、WebFinger を HTTP で問い合わせる設定を付けて起動し直します。
 
 ```sh
-cd /Users/jj1guj/jiskey
+cd /path/to/misskey
 env MISSKEY_WEBFINGER_USE_HTTP=true pnpm dev
 ```
 
 起動後、設定が反映されたか確認します。
 
 ```sh
-cd /Users/jj1guj/jiskey
+cd /path/to/misskey
 node -e 'const c=require("./built/.config.json");console.log(c.proxy)'
 ```
 
