@@ -16,7 +16,7 @@ Cloudflare Tunnel を使わずに、手元で動かしている Misskeyから次
 - `http://blog.local` は既定でポート80に接続しようとします。ホストの80番を開かないよう、ローカル専用のプロキシ [tools/local-fediverse-proxy.cjs](../tools/local-fediverse-proxy.cjs) を経由して Caddy の `28080` へ届けます。
 
 ```text
-ブラウザー・Misskey ──→ プロキシ 127.0.0.1:28083 ──→ Caddy 127.0.0.1:28080
+ブラウザー・Misskey ──→ プロキシ 127.0.0.1:28084 ──→ Caddy 127.0.0.1:28080
                                                         │
 Hollo コンテナー ──→ blog.local（Docker ネットワーク内の別名）─┘
 Hollo コンテナー ──→ localhost:61812（socat で中継）──→ ホストの Misskey
@@ -56,7 +56,7 @@ BLOG_DOMAIN=blog.local
 BLOG_URL=http://blog.local
 CADDY_PORT=28080
 LOCAL_FEDIVERSE_PORT=61812
-LOCAL_PROXY_PORT=28083
+LOCAL_PROXY_PORT=28084
 
 HOLLO_ACCESS_TOKEN=
 PUBLISH_ENABLED=false
@@ -86,7 +86,7 @@ docker compose -p blog-fedi-test -f compose.yml -f compose.dev.yml \
 node --env-file=.env tools/local-fediverse-proxy.cjs
 ```
 
-`Local proxy listening on 127.0.0.1:28083` と表示されれば成功です。
+`Local proxy listening on 127.0.0.1:28084` と表示されれば成功です。
 
 - 待ち受けるのは `127.0.0.1` だけです。
 - `http://blog.local` 以外への接続は `403` で拒否します。
@@ -102,7 +102,7 @@ node --env-file=.env tools/local-fediverse-proxy.cjs
 1. Apple メニュー →「システム設定」→「ネットワーク」を開きます。
 2. 使用中の「Wi-Fi」または「Ethernet」の「詳細」→「プロキシ」を開きます。
 3. 現在の設定を控えます。
-4. 「Webプロキシ（HTTP）」をオンにし、サーバーに `127.0.0.1`、ポートに `28083` を入力します。認証はオフのままにします。HTTPS のプロキシは変更しません。
+4. 「Webプロキシ（HTTP）」をオンにし、サーバーに `127.0.0.1`、ポートに `28084` を入力します。認証はオフのままにします。HTTPS のプロキシは変更しません。
 5. 「プロキシ設定を使用しないホストとドメイン」を次のようにします。`*.local` が残っていると `blog.local` がプロキシを通らないため、確認中は削除します。
 
    ```text
@@ -114,20 +114,20 @@ node --env-file=.env tools/local-fediverse-proxy.cjs
 ### Firefox
 
 1. 「設定」→「一般」→「ネットワーク設定」→「接続設定」を開きます。
-2. 「手動でプロキシーを設定する」を選び、HTTP プロキシーに `127.0.0.1`、ポートに `28083` を入力します。
+2. 「手動でプロキシーを設定する」を選び、HTTP プロキシーに `127.0.0.1`、ポートに `28084` を入力します。
 3. 「このプロキシーを HTTPS にも使用する」はオフにします。
 4. 「プロキシーを使用しないアドレス」に `localhost, 127.0.0.1` を入れ、`*.local` などがあれば確認中は削除します。
 
 ## 6. Hollo の初期設定とアカウントを作る
 
-1. ブラウザーで `http://blog.local/setup` を開き、管理者を作成します。
-2. `http://blog.local/accounts` で、ユーザー名 `blog` のアカウントを作成します。
+1. ブラウザーで管理用ポートの `http://localhost:28082/setup` を開き、管理者を作成します。`/setup` は `http://blog.local` からは開けません。ポートを変更している場合は、`.env` の `HOLLO_ADMIN_PORT` に置き換えてください。
+2. `http://localhost:28082/accounts` で、ユーザー名 `blog` のアカウントを作成します。管理用ポートは Hollo に `blog.local` として要求を渡すため、アカウントの URL は `http://blog.local/@blog` になります。
 
 アカウントの URL を確認します。
 
 ```sh
 curl --fail --silent --show-error \
-  --noproxy '' --proxy http://127.0.0.1:28083 \
+  --noproxy '' --proxy http://127.0.0.1:28084 \
   -H 'Accept: application/activity+json' \
   http://blog.local/@blog | jq -r '.id'
 ```
@@ -140,7 +140,7 @@ Misskey の `.config/default.yml` を編集します。
 
 ```yaml
 # Proxy for HTTP/HTTPS
-proxy: http://127.0.0.1:28083
+proxy: http://127.0.0.1:28084
 
 proxyBypassHosts:
   - api.deepl.com
@@ -170,7 +170,7 @@ cd /path/to/misskey
 node -e 'const c=require("./built/.config.json");console.log(c.proxy)'
 ```
 
-`http://127.0.0.1:28083` と表示されれば反映されています。`undefined` の場合は、`proxy:` の行がコメントのままになっています。
+`http://127.0.0.1:28084` と表示されれば反映されています。`undefined` の場合は、`proxy:` の行がコメントのままになっています。
 
 ## 8. 検索・フォローする
 
@@ -180,7 +180,7 @@ Hollo 側のフォロワー数は次で確認できます。
 
 ```sh
 curl --fail --silent --show-error \
-  --noproxy '' --proxy http://127.0.0.1:28083 \
+  --noproxy '' --proxy http://127.0.0.1:28084 \
   --get --data-urlencode 'acct=blog' \
   http://blog.local/api/v1/accounts/lookup | jq '{acct, followers_count}'
 ```
@@ -193,7 +193,7 @@ curl --fail --silent --show-error \
 
 ```sh
 curl --fail --silent --show-error \
-  --noproxy '' --proxy http://127.0.0.1:28083 \
+  --noproxy '' --proxy http://127.0.0.1:28084 \
   --data-urlencode 'client_name=Hugo Publisher' \
   --data-urlencode 'redirect_uris=urn:ietf:wg:oauth:2.0:oob' \
   --data-urlencode 'scopes=write:statuses' \
@@ -224,7 +224,7 @@ fish の場合：
 ```fish
 read --silent --prompt-str '認可コード: ' AUTHORIZATION_CODE
 printf '%s' $AUTHORIZATION_CODE | curl --fail --show-error --silent \
-  --noproxy '' --proxy http://127.0.0.1:28083 \
+  --noproxy '' --proxy http://127.0.0.1:28084 \
   --user 'CLIENT_ID' \
   --data-urlencode 'grant_type=authorization_code' \
   --data-urlencode 'redirect_uri=urn:ietf:wg:oauth:2.0:oob' \
@@ -238,7 +238,7 @@ bash・zsh の場合：
 ```sh
 printf '認可コード: '; read -rs AUTHORIZATION_CODE; printf '\n'
 printf '%s' "$AUTHORIZATION_CODE" | curl --fail --show-error --silent \
-  --noproxy '' --proxy http://127.0.0.1:28083 \
+  --noproxy '' --proxy http://127.0.0.1:28084 \
   --user 'CLIENT_ID' \
   --data-urlencode 'grant_type=authorization_code' \
   --data-urlencode 'redirect_uri=urn:ietf:wg:oauth:2.0:oob' \
@@ -279,7 +279,7 @@ publisher の初回処理が終わるまで待ちます。
 
 ```sh
 curl --fail --silent --show-error \
-  --noproxy '' --proxy http://127.0.0.1:28083 \
+  --noproxy '' --proxy http://127.0.0.1:28084 \
   http://blog.local/fediverse/posts.json | jq '.initialized'
 ```
 
@@ -327,19 +327,11 @@ Misskey のタイムラインで、次の点を確認します。
 
 実際の閲覧数を表示するには、GoatCounterのサイトを作成します。`blog-fedi-test` は既存環境と別のGoatCounterデータを使います。すでに作成済みの場合は、設定画面の確認から進めてください。
 
-1. 次の例の `stats.example.com` を `.env` の `STATS_DOMAIN` の値に、`you@example.com` をログインに使うメールアドレスに置き換えて実行します。パスワードは対話形式で入力します。
+1. 管理用ポートの `http://localhost:28083/` を開きます。ポートを変更している場合は、`.env` の `STATS_ADMIN_PORT` に置き換えてください。サイトの作成画面が表示されたら、ドメイン欄が `STATS_DOMAIN` の値になっていることを確かめ、メールアドレスとパスワードを入力して作成します。作成済みの場合は、`http://localhost:28083/user/new` でログインします。
+2. 「Settings」→「Site settings」で「Allow adding visitor counts on your website」を有効にして保存します。
+3. 記事ページを再読み込みします。記録がなければ閲覧数は0と表示されます。`localhost` で開いたページは、GoatCounterの既定の設定では計測されません。`blog.local` は既定の除外対象ではありません。
 
-   ```sh
-   docker compose -p blog-fedi-test -f compose.yml -f compose.dev.yml \
-     exec goatcounter goatcounter db create site \
-     -vhost stats.example.com -user.email you@example.com
-   ```
-
-2. `http://localhost:28081/user/new` を開き、作成したアカウントでログインします。ポートを変更している場合は、`.env` の `STATS_PORT` に置き換えてください。
-3. 「Settings」→「Site settings」で「Allow adding visitor counts on your website」を有効にして保存します。
-4. 記事ページを再読み込みします。記録がなければ閲覧数は0と表示されます。`localhost` で開いたページは、GoatCounterの既定の設定では計測されません。`blog.local` は既定の除外対象ではありません。
-
-GoatCounterのサイトが未作成の場合、`/gc/counter/` への要求は `307` と `Location: /` を返します。設定を保存しても閲覧数が表示されない場合は、ブラウザーの開発者コンソールで `Failed to load GoatCounter pageview count` を確認してください。`403` の場合は、手順3の設定を確認します。
+GoatCounterのサイトが未作成の場合、`/gc/counter/` への要求は `307` と `Location: /` を返します。設定を保存しても閲覧数が表示されない場合は、ブラウザーの開発者コンソールで `Failed to load GoatCounter pageview count` を確認してください。`403` の場合は、手順2の設定を確認します。
 
 ## 12. 終了後の片付け
 

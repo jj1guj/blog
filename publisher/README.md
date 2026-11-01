@@ -95,7 +95,7 @@ PUBLISH_EXISTING_ON_FIRST_RUN=false
 docker compose -f compose.yml up -d --pull never hugo hollo caddy
 ```
 
-`http://localhost:28080/setup` で管理者の初期設定を済ませ、`http://localhost:28080/accounts` でユーザー名 `blog` のアカウントを作成します。ブラウザーでも `127.0.0.1` ではなく `localhost` を使ってください。作成時のホスト名が保存され、ハンドルは `@blog@localhost:28080` になります。
+管理用ポートの `http://localhost:28082/setup` で管理者の初期設定を済ませ、`http://localhost:28082/accounts` でユーザー名 `blog` のアカウントを作成します。`/setup` は公開側のポート（28080）では開けません。管理用ポートは Hollo に `BLOG_URL` のホスト名を伝えるため、ハンドルは `@blog@localhost:28080` になります。ブラウザーでも `127.0.0.1` ではなく `localhost` を使ってください。
 
 この DB はローカル検証用です。後から `BLOG_URL` を変更するだけでは、保存済みのアカウントは本番ドメインに変わりません。本番は別の Compose プロジェクトとボリュームを使い、公開ドメインで新しいアカウントを作成してください。検証用ボリュームを削除する必要はありません。
 
