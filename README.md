@@ -12,6 +12,26 @@ Hugo と Hollo を Docker Compose で動かす、Fediverse 連携ブログです
 
 ## 構成
 
-- [Docker Compose](compose.yml) と [Caddyfile](Caddyfile)
-- Hugo サイトとテーマ設定（[hugo.toml](hugo.toml)、[PaperMod](themes/PaperMod)）
-- Hollo、PostgreSQL、GoatCounter、自動投稿プログラム
+```mermaid
+flowchart LR
+    clients["ブラウザー・Fediverse"]
+    tunnel["Cloudflare Tunnel<br>本番のみ"]
+    local["ローカルブラウザー"]
+    caddy["Caddy"]
+    hugo["Hugo<br>Markdown からサイト生成"]
+    hollo["Hollo"]
+    postgres[("PostgreSQL")]
+    goatcounter["GoatCounter"]
+    publisher["Publisher"]
+    postmap["投稿対応表"]
+
+    clients --> tunnel --> caddy
+    local --> caddy
+    hugo -->|"生成ファイル"| caddy
+    caddy -->|"未生成のページ"| hollo
+    caddy -->|"/gc/"| goatcounter
+    hollo <--> postgres
+    hugo -. RSS .-> publisher
+    publisher -->|"投稿 API"| hollo
+    publisher --> postmap --> caddy
+```
