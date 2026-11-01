@@ -75,6 +75,16 @@
 			redir * / 302
 		}
 
+		# 末尾の / がないと記事内の相対 URL がずれるため、Hugo のページは / 付きの URL へ移動する。
+		@hugo_dir {
+			not path */
+			file {
+				root /srv
+				try_files {path}/index.html
+			}
+		}
+		redir @hugo_dir {path}/ 308
+
 		@hugo file {
 			root /srv
 			try_files {path} {path}/index.html

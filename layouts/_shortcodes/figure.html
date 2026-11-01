@@ -2,7 +2,9 @@
     {{- if .Get "link" -}}
         <a href="{{ .Get "link" }}"{{ with .Get "target" }} target="{{ . }}"{{ end }}{{ with .Get "rel" }} rel="{{ . }}"{{ end }}>
     {{- end }}
-    <img loading="lazy" src="{{ .Get "src" }}{{- if eq (.Get "align") "center" }}#center{{- end }}"
+    {{- $src := .Get "src" }}
+    {{- with .Page.Resources.Get $src }}{{ $src = .RelPermalink }}{{ end }}
+    <img loading="lazy" src="{{ $src }}{{- if eq (.Get "align") "center" }}#center{{- end }}"
          {{- if or (.Get "alt") (.Get "caption") }}
          alt="{{ with .Get "alt" }}{{ . }}{{ else }}{{ .Get "caption" | markdownify | plainify }}{{ end }}"
          {{- end -}}
