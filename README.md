@@ -4,7 +4,7 @@ Hugo と Hollo を Docker Compose で動かす、Fediverse 連携ブログです
 
 ## セットアップと使い方
 
-- [本番運用の開始手順](docs/production-setup.md)
+- [本番運用のセットアップ手順](docs/production-setup.md)
 - [ローカルの Misskey との連合確認](docs/local-federation.md)
 - [記事の作成](docs/writing-posts.md)
 - [記事の自動投稿と OAuth 設定](publisher/README.md)
