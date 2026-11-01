@@ -35,7 +35,7 @@ docker compose up -d hollo publisher
 
 この構成ではHolloの安定版 `latest` を使います。Hollo 0.9.25では、Holloの投稿をMisskeyの別アカウントから引用すると、Holloがその引用を未承認とみなし、引用一覧に返しません。開発版には、この形式の引用を公開設定に応じて受け入れる変更があります。対応を含む安定版に更新するまでは、Misskeyからの引用は表示されません。
 
-GoatCounterの計測スクリプトと閲覧数の取得は、同じオリジンの `/gc/` 経由で行います。実際の閲覧数を表示するには、GoatCounter側でサイトを作成し、「Allow adding visitor counts on your website」を有効にしてください。ローカル連合確認用の別プロジェクトでの設定手順は、[ローカルの Misskey との連合確認](../docs/local-federation.md#11-閲覧数を表示する)に記載しています。
+GoatCounterの計測スクリプトと閲覧数の取得は、同じオリジンの `/gc/` 経由で行います。実際の閲覧数を表示するには、GoatCounter側でサイトを作成し、「Allow adding visitor counts on your website」を有効にしてください。本番での手順は[本番運用の開始手順](../docs/production-setup.md#5-goatcounter-のサイトを作る)、ローカル連合確認用の別プロジェクトでの設定手順は、[ローカルの Misskey との連合確認](../docs/local-federation.md#11-閲覧数を表示する)に記載しています。
 
 記録のないページは閲覧数0と表示します。`localhost` やプライベートIPアドレスからのアクセスは、GoatCounterの既定の設定では計測されません。`blog.local` は既定の除外対象ではありません。閲覧数はキャッシュされるため、新しいアクセスがすぐに表示に反映されない場合があります。GoatCounterから閲覧数を取得できない場合も0を表示し、実際の数が不明であることを示す `!` を添えます。開発者コンソールには英語でエラーを出します。
 
