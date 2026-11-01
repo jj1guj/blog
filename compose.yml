@@ -41,6 +41,8 @@ services:
       HUGO_PARAMS_MEDIAPROXYURL: ${MEDIA_PROXY_URL:-}
     volumes:
       - ./:/src:ro
+      # `hugo new content` で記事を作れるよう、記事フォルダーだけ書き込み可能にする。
+      - ./content:/src/content
       - hugo_cache:/cache
       - hugo_public:/public
     working_dir: /src
