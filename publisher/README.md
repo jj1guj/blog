@@ -12,8 +12,6 @@ RSS の本文は Hugo が生成した HTML から Markdown に変換します。
 
 `BLOG_URL` は Hugo、Caddy、publisher と Hollo のメディア URL で共通に使います。末尾の `/` は付けないでください。Caddy はこの URL の `http` または `https` を Hollo に伝えるため、公開環境ではブログの HTTPS URL を指定してください。空欄の場合、通常構成では `https://BLOG_DOMAIN`、開発用構成では `http://127.0.0.1:CADDY_PORT` を使います。
 
-リポジトリのルートで `sh tests/caddy.sh` を実行すると、Docker 上の隔離された Caddy で転送先と URL のスキームを確認できます。稼働中のサービスにはアクセスしません。
-
 初回起動時は、既に RSS にある記事を投稿せず記録します。初回から既存記事を投稿したい場合は、起動前に `PUBLISH_EXISTING_ON_FIRST_RUN=true` に設定してください。この設定は投稿対応表を初期化するときだけ使います。書きかけの記事は `draft: true` にしておいてください。公開状態の記事を保存すると、Hugo のビルド後に投稿対象になります。
 
 投稿済み記事の修正や削除は Hollo に反映されません。同じパスの記事を再公開しても、自動では再投稿しません。
