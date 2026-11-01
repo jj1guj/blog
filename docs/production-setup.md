@@ -22,11 +22,17 @@ Hollo は管理者が 1 人もいない間、`/setup` を開いた人に管理�
 
 管理用ポートは、Hollo には `BLOG_URL` のホスト名、GoatCounter には `STATS_DOMAIN` への要求として渡します。そのため、管理用ポートで作ったアカウントの URL も `https://<BLOG_DOMAIN>/@blog` になります。
 
-## 1. `.env` を作る
+## 1. リポジトリと `.env` を用意する
+
+テーマはサブモジュールなので、`--recurse-submodules` を付けて取得します。
 
 ```sh
+git clone --recurse-submodules https://github.com/jj1guj/blog.git
+cd blog
 cp .env.example .env
 ```
+
+付けずに取得済みの場合は、`git submodule update --init` を実行してください。テーマがないと Hugo のビルドが失敗し、ブログのページの代わりに Hollo の画面が表示されます。
 
 `.env` の次の項目を変更します。
 
