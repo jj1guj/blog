@@ -41,10 +41,12 @@ services:
       - /public
       - --cleanDestinationDir
       - --noTimes
-      - --noBuildLock
       - --buildDrafts
     environment:
       HUGO_BASEURL: ${BLOG_URL:-http://127.0.0.1:${CADDY_PORT}}
+    volumes:
+      # `hugo new content` で記事を作れるよう、記事フォルダーだけ書き込み可能にする。
+      - ./content:/src/content
 
   publisher:
     environment:
