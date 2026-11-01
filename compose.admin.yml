@@ -1,0 +1,11 @@
+# 管理用ポートを開くための設定です。初期設定やトークンの発行が終わったら、
+# `docker compose up -d caddy` で作り直して閉じてください。
+include:
+  - compose.yml
+
+services:
+  caddy:
+    ports:
+      # Cloudflare Tunnel には登録しない。
+      - "127.0.0.1:${HOLLO_ADMIN_PORT:-28082}:8081"
+      - "127.0.0.1:${STATS_ADMIN_PORT:-28083}:8083"

@@ -89,10 +89,10 @@ PUBLISH_ENABLED=false
 PUBLISH_EXISTING_ON_FIRST_RUN=false
 ```
 
-投稿確認では `compose.dev.yml` を指定しません。開発用構成は下書きも RSS に含め、自動投稿を無効にするためです。通常構成を使っても、`BLOG_URL` が HTTP の localhost ならローカルで確認できます。
+投稿確認では `compose.dev.yml` を指定しません。開発用構成は下書きも RSS に含め、自動投稿を無効にするためです。代わりに、通常構成に管理用ポートを加えた `compose.admin.yml` を使います。`BLOG_URL` が HTTP の localhost ならローカルで確認できます。
 
 ```sh
-docker compose -f compose.yml up -d --pull never hugo hollo caddy
+docker compose -f compose.admin.yml up -d --pull never hugo hollo caddy
 ```
 
 管理用ポートの `http://localhost:28082/setup` で管理者の初期設定を済ませ、`http://localhost:28082/accounts` でユーザー名 `blog` のアカウントを作成します。`/setup` は公開側のポート（28080）では開けません。管理用ポートは Hollo に `BLOG_URL` のホスト名を伝えるため、ハンドルは `@blog@localhost:28080` になります。ブラウザーでも `127.0.0.1` ではなく `localhost` を使ってください。

@@ -13,7 +13,7 @@ Hollo は管理者が 1 人もいない間、`/setup` を開いた人に管理�
 
 塞ぐのは初回設定にしか使わない入口なので、設定後もこのままで問題ありません。そのため、Cloudflare Tunnel を先に設定していても、第三者に管理者を作られることはありません。
 
-初回設定には、`127.0.0.1` だけで待ち受ける次の管理用ポートを使います。この 2 つは Cloudflare Tunnel に登録しないでください。
+初回設定には、`127.0.0.1` だけで待ち受ける次の管理用ポートを使います。管理用ポートは [compose.admin.yml](../compose.admin.yml) を指定して起動したときだけ開きます。この 2 つは Cloudflare Tunnel に登録しないでください。
 
 | 管理用ポート | 既定値 | 内容 |
 | --- | --- | --- |
@@ -48,8 +48,10 @@ HOLLO_SECRET_KEY=（44 文字以上のランダムな値）
 
 ## 2. 起動する
 
+管理用ポートを開いて起動します。
+
 ```sh
-docker compose up -d
+docker compose -f compose.admin.yml up -d
 ```
 
 ## 3. 管理用ポートに接続する
@@ -102,3 +104,13 @@ curl --fail --silent --show-error \
 ## 7. 自動投稿のアクセストークンを発行する
 
 [記事の自動投稿](../publisher/README.md#oauth-トークンの取得) の手順に従います。URL の `http://localhost:28080` は、管理用ポートの `http://localhost:28082` に置き換えてください。発行したトークンは `.env` の `HOLLO_ACCESS_TOKEN` に設定し、`docker compose up -d publisher` で publisher を作り直します。
+
+## 8. 管理用ポートを閉じる
+
+`compose.admin.yml` を指定せずに Caddy を作り直します。
+
+```sh
+docker compose up -d caddy
+```
+
+トークンの発行し直しなどで再び必要になったときは、`docker compose -f compose.admin.yml up -d caddy` で開き、作業後に同じ手順で閉じてください。

@@ -1,7 +1,7 @@
 # 開発・ローカル連合確認用の設定です。本番では使わないでください。
-# compose.yml を読み込み、開発用の設定で上書きします。
+# compose.yml と管理用ポートの設定を読み込み、開発用の設定で上書きします。
 include:
-  - compose.yml
+  - compose.admin.yml
 
 services:
   caddy:
