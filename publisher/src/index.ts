@@ -226,6 +226,71 @@ export async function savePostMap(
   }
 }
 
+function escapeHtmlAttribute(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+export function remoteViewDirectory(mapPath: string): string {
+  return resolve(dirname(mapPath), "remote-view");
+}
+
+// Fediverse の「リモートで表示」で Hollo の投稿ページを開いたとき、記事へ移動させるページ。
+// Caddy はブラウザーからの要求にだけ、このファイルを返す。
+export function createRemoteViewPage(articleUrl: string): string {
+  const href = escapeHtmlAttribute(articleUrl);
+  return `<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta http-equiv="refresh" content="0; url=${href}">
+<link rel="canonical" href="${href}">
+<title>記事へ移動します</title>
+</head>
+<body>
+<p><a href="${href}">記事へ移動します</a></p>
+</body>
+</html>
+`;
+}
+
+export async function syncRemoteViewPages(
+  mapPath: string,
+  blogUrl: string,
+): Promise<number> {
+  const postMap = await loadPostMap(mapPath);
+  const directory = remoteViewDirectory(mapPath);
+  let written = 0;
+  for (const [path, post] of Object.entries(postMap.posts)) {
+    let statusPath: string;
+    try {
+      statusPath = new URL(post.url).pathname;
+    } catch {
+      continue;
+    }
+    if (!/^\/@[A-Za-z0-9_.-]+\/[A-Za-z0-9_-]+$/.test(statusPath)) continue;
+    const filePath = resolve(directory, `.${statusPath}.html`);
+    const content = createRemoteViewPage(new URL(path, blogUrl).href);
+    try {
+      if (await readFile(filePath, "utf8") === content) continue;
+    } catch (error) {
+      if (!isRecord(error) || error.code !== "ENOENT") throw error;
+    }
+    await mkdir(dirname(filePath), { recursive: true });
+    const temporaryPath = `${filePath}.${process.pid}.tmp`;
+    try {
+      await writeFile(temporaryPath, content, { encoding: "utf8", mode: 0o644 });
+      await rename(temporaryPath, filePath);
+    } catch (error) {
+      await rm(temporaryPath, { force: true });
+      throw error;
+    }
+    written++;
+  }
+  return written;
+}
+
 function getStatusResponse(value: unknown): PublishedPost {
   if (!isRecord(value) || typeof value.id !== "string" ||
       typeof value.url !== "string") {
@@ -359,6 +424,7 @@ export async function publishNewItems(
     postMap.seenPaths.push(item.path);
     postMap.posts[item.path] = post;
     await savePostMap(options.mapPath, postMap);
+    await syncRemoteViewPages(options.mapPath, options.blogUrl);
     seenPaths.add(item.path);
     published++;
   }
@@ -424,6 +490,11 @@ async function main(): Promise<void> {
   }
 
   while (true) {
+    try {
+      await syncRemoteViewPages(config.mapPath, config.blogUrl);
+    } catch (error) {
+      console.error(`[publisher] Failed to write remote view pages: ${errorMessage(error)}`);
+    }
     if (config.enabled && config.accessToken) {
       try {
         const result = await publishNewItems(config);

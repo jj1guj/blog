@@ -50,6 +50,19 @@ npm ci --prefix publisher
 node --test tests/fediverse-display.test.mjs
 ```
 
+## 「リモートで表示」の移動先
+
+Misskey の「リモートで表示」などで、ブラウザーから Hollo の投稿ページ（`/@blog/<投稿ID>`）を開くと、対応する記事へ移動します。publisher は投稿対応表と同じボリュームの `remote-view/` に、投稿ごとの移動用ページを書き出します。Caddy は、ブラウザーからの要求（`Accept` に `text/html` を含み、`application/activity+json` と `application/ld+json` を含まないもの）で、移動用ページがある場合だけこのページを返します。プロフィール（`/@blog`）をブラウザーで開いた場合は、ブログのトップページへ移動します。
+
+Fediverse のサーバーによる ActivityPub の取得は、これまでどおり Hollo が応答するため、連合には影響しません。投稿対応表にない投稿（Hollo のクライアントから直接投稿したものなど）は、Hollo の投稿ページを表示します。移動用ページは publisher の起動時と30秒ごとの確認時に対応表から作り直すため、既存の投稿にも使えます。
+
+反映するには、publisher のイメージをビルドし、Caddy と publisher を起動し直します。
+
+```sh
+docker compose build publisher
+docker compose up -d --force-recreate caddy publisher
+```
+
 ## 投稿文字数
 
 投稿前に Hollo の `/api/v2/instance` から公称上限を取得します。取得できない場合や値が不正な場合は投稿しません。文字数は、URL とタイトルを含む送信用 Markdown の Unicode コードポイント数で数えます。URL も実際の長さで数え、Hollo が返す `characters_reserved_per_url` に置き換える方式は使いません。Hollo の API や他のサーバーが使う文字数の数え方とは異なる場合があります。

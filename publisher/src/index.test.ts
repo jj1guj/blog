@@ -10,6 +10,8 @@ import {
   parseRss,
   publishNewItems,
   readConfig,
+  remoteViewDirectory,
+  syncRemoteViewPages,
   type FeedItem,
   type PublisherOptions,
 } from "./index.ts";
@@ -395,4 +397,24 @@ test("環境変数の真偽値を検証し、トークン未設定を空文字�
   assert.equal(config.accessToken, "");
   assert.throws(() => readConfig({ PUBLISH_ENABLED: "yes" }), /true or false/);
   assert.throws(() => readConfig({ BLOG_URL: "https://user:password@blog.example/" }), /only a scheme and host/);
+});
+
+test("Hollo の投稿ページから記事へ移動するページを書き出す", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const mapPath = join(directory, "posts.json");
+  await writeFile(mapPath, JSON.stringify({
+    version: 1,
+    initialized: true,
+    seenPaths: [],
+    posts: {
+      "/posts/a&b/": { id: "0193a", url: "https://blog.example/@blog/0193a" },
+      "/posts/bad/": { id: "x", url: "https://blog.example/@blog/../../etc" },
+    },
+  }));
+
+  assert.equal(await syncRemoteViewPages(mapPath, blogUrl), 1);
+  const page = await readFile(join(remoteViewDirectory(mapPath), "@blog", "0193a.html"), "utf8");
+  assert.match(page, /content="0; url=https:\/\/blog\.example\/posts\/a&amp;b\/"/);
+  assert.equal(await syncRemoteViewPages(mapPath, blogUrl), 0);
 });
