@@ -45,10 +45,12 @@
 
 		# Fediverse の「リモートで表示」など、ブラウザーで Hollo のページを開いたときはブログへ移動する。
 		# ActivityPub の取得（Accept が activity+json / ld+json）は Hollo へそのまま渡す。
+		# ブログのリンクから開いたとき（?view=fediverse）は、Hollo のページを表示する。
 		@remote_view_post {
 			path_regexp ^/@[^/@]+/[^/]+$
 			header Accept *text/html*
 			not header_regexp Accept (?i)application/(activity|ld)\+json
+			not query view=fediverse
 			file {
 				root /var/lib/blog/remote-view
 				try_files {path}.html
@@ -66,6 +68,7 @@
 			path_regexp ^/@[^/@]+/?$
 			header Accept *text/html*
 			not header_regexp Accept (?i)application/(activity|ld)\+json
+			not query view=fediverse
 		}
 		handle @remote_view_profile {
 			header Vary Accept

@@ -52,7 +52,7 @@ node --test tests/fediverse-display.test.mjs
 
 ## 「リモートで表示」の移動先
 
-Misskey の「リモートで表示」などで、ブラウザーから Hollo の投稿ページ（`/@blog/<投稿ID>`）を開くと、対応する記事へ移動します。publisher は投稿対応表と同じボリュームの `remote-view/` に、投稿ごとの移動用ページを書き出します。Caddy は、ブラウザーからの要求（`Accept` に `text/html` を含み、`application/activity+json` と `application/ld+json` を含まないもの）で、移動用ページがある場合だけこのページを返します。プロフィール（`/@blog`）をブラウザーで開いた場合は、ブログのトップページへ移動します。
+Misskey の「リモートで表示」などで、ブラウザーから Hollo の投稿ページ（`/@blog/<投稿ID>`）を開くと、対応する記事へ移動します。publisher は投稿対応表と同じボリュームの `remote-view/` に、投稿ごとの移動用ページを書き出します。Caddy は、ブラウザーからの要求（`Accept` に `text/html` を含み、`application/activity+json` と `application/ld+json` を含まないもの）で、移動用ページがある場合だけこのページを返します。プロフィール（`/@blog`）をブラウザーで開いた場合は、ブログのトップページへ移動します。ブログの「Fediverse の投稿を見る」とプロフィールへのリンクは `?view=fediverse` を付けて開くため、移動せずに Hollo のページを表示します。
 
 Fediverse のサーバーによる ActivityPub の取得は、これまでどおり Hollo が応答するため、連合には影響しません。投稿対応表にない投稿（Hollo のクライアントから直接投稿したものなど）は、Hollo の投稿ページを表示します。移動用ページは publisher の起動時と30秒ごとの確認時に対応表から作り直すため、既存の投稿にも使えます。
 

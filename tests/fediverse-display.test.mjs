@@ -208,7 +208,15 @@ test("返信と複数ページの引用を時系列で統合し、重複を除�
     ["閲覧数", "いいね", "ブースト", "リアクション"],
   );
   const profile = document.querySelector(".fediverse-profile");
-  assert.equal(profile.getAttribute("href"), `${origin}/@blog`);
+  assert.equal(profile.getAttribute("href"), `${origin}/@blog?view=fediverse`);
+  assert.equal(
+    document.querySelector("[data-status-link]").getAttribute("href"),
+    `${origin}/@blog/status-1?view=fediverse`,
+  );
+  assert.equal(
+    document.head.querySelector('link[rel="alternate"][type="application/activity+json"]').getAttribute("href"),
+    `${origin}/@blog/status-1`,
+  );
   assert.equal(profile.textContent, "@blog@blog.example · フォロワー 7");
 
   const contents = Array.from(document.querySelectorAll(".fediverse-reply-content"));

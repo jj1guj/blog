@@ -102,10 +102,18 @@ function sanitizeReplyHtml(html) {
   return safe;
 }
 
+// Caddy は「リモートで表示」で開かれた Hollo のページを記事へ移動させるため、
+// ブログから Hollo のページを開くリンクには移動させない印を付ける。
+function holloPageUrl(url) {
+  const page = new URL(url);
+  page.searchParams.set("view", "fediverse");
+  return page;
+}
+
 function makeProfileLink(account) {
   const link = document.createElement("a");
   link.className = "fediverse-profile";
-  link.href = new URL("/@blog", location.origin).href;
+  link.href = holloPageUrl(new URL("/@blog", location.origin)).href;
   link.textContent = `@blog@${location.host}`;
 
   const count = document.createElement("span");
@@ -179,7 +187,7 @@ function renderSocialStatus(status) {
   socialPanel.querySelector('[data-count="emoji_reactions"]').textContent =
     numberFormat.format(reactionCount);
   const link = social.querySelector("[data-status-link]");
-  link.href = postUrl.href;
+  link.href = holloPageUrl(postUrl).href;
   link.rel = "noopener noreferrer";
 
   const alternate = document.createElement("link");
