@@ -1,0 +1,131 @@
+# BLOG_URL からスキームとホスト名（ポートを含む）を取り出す。
+(blog_url) {
+	map {env.BLOG_URL} {blog_scheme} {blog_host} {
+		~^(?i:https)://([^/]+)/?$ https ${1}
+		~^(?i:http)://([^/]+)/?$ http ${1}
+		default invalid invalid
+	}
+}
+
+# 公開用のブログ（Cloudflare Tunnel の転送先）。
+:80 {
+	route {
+		import blog_url
+
+		# Hollo の初回設定（管理者の作成）は、公開側からは常に開けないようにする。
+		# 初回設定は 127.0.0.1 だけで待ち受ける管理用ポート（:8081）から行う。
+		@hollo_setup path /setup /setup/*
+		respond @hollo_setup "Not Found" 404
+
+		# ブログが使う計測と閲覧数の取得だけを GoatCounter へ渡す。
+		# サイト作成前の GoatCounter はどのパスでもアカウント作成画面を返すため、それ以外は塞ぐ。
+		handle_path /gc/* {
+			@goatcounter_public path /count /count.js /counter/*
+			handle @goatcounter_public {
+				reverse_proxy goatcounter:8080 {
+					header_up Host {$STATS_DOMAIN}
+				}
+			}
+			handle {
+				respond "Not Found" 404
+			}
+		}
+
+		handle /fediverse/posts.json {
+			rewrite * /posts.json
+			root * /var/lib/blog
+			file_server
+		}
+
+		# Fediverse の「リモートで表示」など、ブラウザーで Hollo のページを開いたときはブログへ移動する。
+		# ActivityPub の取得（Accept が activity+json / ld+json）は Hollo へそのまま渡す。
+		@remote_view_post {
+			path_regexp ^/@[^/@]+/[^/]+$
+			header Accept *text/html*
+			not header_regexp Accept (?i)application/(activity|ld)\+json
+			file {
+				root /var/lib/blog/remote-view
+				try_files {path}.html
+			}
+		}
+		handle @remote_view_post {
+			header Vary Accept
+			header Cache-Control no-cache
+			root * /var/lib/blog/remote-view
+			try_files {path}.html
+			file_server
+		}
+
+		@remote_view_profile {
+			path_regexp ^/@[^/@]+/?$
+			header Accept *text/html*
+			not header_regexp Accept (?i)application/(activity|ld)\+json
+		}
+		handle @remote_view_profile {
+			header Vary Accept
+			redir * / 302
+		}
+
+		@hugo file {
+			root /srv
+			try_files {path} {path}/index.html
+		}
+		handle @hugo {
+			root * /srv
+			try_files {path} {path}/index.html
+			file_server
+		}
+
+		handle {
+			@invalid_scheme expression `{blog_scheme} == "invalid"`
+			respond @invalid_scheme "BLOG_URL must start with http:// or https://" 500
+			reverse_proxy hollo:3000 {
+				header_up X-Forwarded-Proto {blog_scheme}
+			}
+		}
+	}
+}
+
+# 公開用の GoatCounter（Cloudflare Tunnel の転送先）。
+:8082 {
+	# サイト作成前の GoatCounter は、POST / でサイトと管理者を作成できる。
+	# サイト作成後は POST / を使わないため、公開側では常に塞ぐ。
+	@goatcounter_new_site {
+		method POST
+		path /
+	}
+	respond @goatcounter_new_site "Not Found" 404
+	reverse_proxy goatcounter:8080
+}
+
+# 管理用の Hollo。docker-compose.yml で 127.0.0.1 にだけ公開し、Cloudflare Tunnel には登録しない。
+# Hollo は要求のホスト名からアカウントの URL を決めるため、公開用の URL として Hollo へ渡す。
+:8081 {
+	route {
+		import blog_url
+		@invalid_scheme expression `{blog_scheme} == "invalid"`
+		respond @invalid_scheme "BLOG_URL must start with http:// or https://" 500
+
+		# フォーム送信時の CSRF 検査で、公開用の URL からの送信として扱わせる。
+		@has_origin header Origin *
+		request_header @has_origin Origin {blog_scheme}://{blog_host}
+
+		reverse_proxy hollo:3000 {
+			header_up Host {blog_host}
+			header_up X-Forwarded-Host {blog_host}
+			header_up X-Forwarded-Proto {blog_scheme}
+			# ログイン後などに公開用の URL へ移動しないよう、相対パスに書き換える。
+			header_down Location "^(?i){$BLOG_URL}(/|$)" "/"
+		}
+	}
+}
+
+# 管理用の GoatCounter。docker-compose.yml で 127.0.0.1 にだけ公開し、Cloudflare Tunnel には登録しない。
+:8083 {
+	reverse_proxy goatcounter:8080 {
+		header_up Host {$STATS_DOMAIN}
+		# GoatCounter はログイン Cookie に STATS_DOMAIN を Domain 属性として付けるため、
+		# localhost で開いたブラウザーが受け取れるように Domain 属性を外す。
+		header_down Set-Cookie "(?i);\s*Domain=[^;]*" ""
+	}
+}

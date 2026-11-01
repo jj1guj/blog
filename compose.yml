@@ -1,0 +1,118 @@
+services:
+  caddy:
+    image: caddy:latest
+    pull_policy: always
+    environment:
+      BLOG_DOMAIN: ${BLOG_DOMAIN:?Set BLOG_DOMAIN in .env}
+      BLOG_URL: ${BLOG_URL:-https://${BLOG_DOMAIN}}
+      STATS_DOMAIN: ${STATS_DOMAIN:?Set STATS_DOMAIN in .env}
+    ports:
+      - "127.0.0.1:${CADDY_PORT:?Set CADDY_PORT in .env}:80"
+      - "127.0.0.1:${STATS_PORT:?Set STATS_PORT in .env}:8082"
+      # 管理用。Cloudflare Tunnel には登録しない。
+      - "127.0.0.1:${HOLLO_ADMIN_PORT:-28082}:8081"
+      - "127.0.0.1:${STATS_ADMIN_PORT:-28083}:8083"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - hugo_public:/srv:ro
+      - post_map:/var/lib/blog:ro
+    depends_on:
+      - hugo
+      - hollo
+      - goatcounter
+    restart: unless-stopped
+
+  hugo:
+    image: ghcr.io/gohugoio/hugo:latest
+    pull_policy: always
+    user: "0:0"
+    command:
+      - --watch
+      - --poll
+      - 700ms
+      - --destination
+      - /public
+      - --cleanDestinationDir
+      - --noTimes
+      - --noBuildLock
+    environment:
+      HUGO_BASEURL: ${BLOG_URL:-https://${BLOG_DOMAIN}}
+      HUGO_CACHEDIR: /cache
+      HUGO_PARAMS_MEDIAPROXYURL: ${MEDIA_PROXY_URL:-}
+    volumes:
+      - ./:/src:ro
+      # `hugo new content` で記事を作れるよう、記事フォルダーだけ書き込み可能にする。
+      - ./content:/src/content
+      - hugo_cache:/cache
+      - hugo_public:/public
+    working_dir: /src
+    restart: unless-stopped
+
+  hollo:
+    image: ghcr.io/fedify-dev/hollo:latest
+    pull_policy: always
+    environment:
+      DATABASE_URL: postgres://hollo:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/hollo
+      SECRET_KEY: ${HOLLO_SECRET_KEY:?Set HOLLO_SECRET_KEY in .env}
+      BEHIND_PROXY: "true"
+      DRIVE_DISK: fs
+      FS_STORAGE_PATH: /var/lib/hollo
+      STORAGE_URL_BASE: ${BLOG_URL:-https://${BLOG_DOMAIN}}/assets
+      MARKDOWN_EXTENSIONS: ${HOLLO_MARKDOWN_EXTENSIONS:-math,tasklist}
+    volumes:
+      - hollo_media:/var/lib/hollo
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:latest
+    pull_policy: always
+    environment:
+      POSTGRES_DB: hollo
+      POSTGRES_USER: hollo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  goatcounter:
+    image: arp242/goatcounter:latest
+    pull_policy: always
+    command: ["serve", "-listen=:8080", "-automigrate"]
+    volumes:
+      - goatcounter_data:/home/goatcounter/goatcounter-data
+    restart: unless-stopped
+
+  publisher:
+    build:
+      context: ./publisher
+    environment:
+      BLOG_URL: ${BLOG_URL:-https://${BLOG_DOMAIN}}
+      HOLLO_API_URL: http://hollo:3000
+      HOLLO_ACCESS_TOKEN: ${HOLLO_ACCESS_TOKEN:-}
+      HUGO_RSS_PATH: /site/index.xml
+      POST_MAP_PATH: /data/posts.json
+      PUBLISH_ENABLED: ${PUBLISH_ENABLED:-true}
+      PUBLISH_EXISTING_ON_FIRST_RUN: ${PUBLISH_EXISTING_ON_FIRST_RUN:-false}
+    volumes:
+      - hugo_public:/site:ro
+      - post_map:/data
+    depends_on:
+      - hugo
+      - hollo
+    restart: unless-stopped
+
+volumes:
+  hugo_cache:
+  hugo_public:
+  hollo_media:
+  postgres_data:
+  goatcounter_data:
+  post_map:

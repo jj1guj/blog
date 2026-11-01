@@ -1,0 +1,7 @@
+{{- if and (eq .Section "posts") (not .Draft) }}
+<section class="fediverse-replies" data-replies hidden>
+  <h2>コメント<span data-comment-count aria-live="polite" hidden>（<span data-count="comments">0</span>）</span></h2>
+  <p data-no-replies hidden>コメントはありません。</p>
+  <ul class="fediverse-reply-list" data-reply-list></ul>
+</section>
+{{- end }}

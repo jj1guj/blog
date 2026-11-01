@@ -1,0 +1,220 @@
+<style>
+.post-content a.url-preview { display: flex; gap: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 6px; text-decoration: none; box-shadow: none; }
+.post-content a:not(.anchor):visited { color: #666666; }
+html[data-theme="dark"] .post-content a:not(.anchor):visited { color: var(--secondary); }
+.url-preview .preview-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.url-preview .preview-title { display: block; font-weight: bold; }
+.url-preview .preview-description { display: block; margin-top: 8px; font-size: 14px; color: var(--secondary); }
+.url-preview .preview-host { display: block; margin-top: 8px; font-size: 12px; color: var(--secondary); }
+.post-content .url-preview img { width: 96px; height: 96px; object-fit: cover; margin: 0; flex-shrink: 0; }
+.post-content figure.image-figure,
+.post-content figure.html-image-figure { margin: 1rem auto; text-align: center; }
+.post-content figure.image-figure img,
+.post-content figure.html-image-figure img { display: block; width: 100%; height: auto; margin: 0 auto; }
+.post-content figure.image-figure figcaption,
+.post-content figure.html-image-figure figcaption { margin-top: 0.5rem; text-align: center; font-weight: normal; }
+.fediverse-stats { margin-top: 0.75rem; font-size: 0.9rem; }
+.fediverse-stats-list { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; list-style: none; margin: 0; padding: 0; }
+.fediverse-stats-list li:not([hidden]) { align-items: center; display: inline-flex; gap: 0.35rem; margin: 0; }
+.fediverse-stats-list svg { color: var(--secondary); flex: none; height: 1.2rem; width: 1.2rem; }
+.fediverse-stat-label { border: 0; clip: rect(0, 0, 0, 0); height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; white-space: nowrap; width: 1px; }
+.fediverse-reactions:not([hidden]) { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; margin: 0.75rem 0 0; padding: 0; }
+.fediverse-reactions li { align-items: center; background: var(--code-bg); border: 1px solid var(--border); border-radius: 999px; display: inline-flex; gap: 0.35rem; margin: 0; padding: 0.2rem 0.55rem; }
+.fediverse-reactions img { height: 1.25rem; object-fit: contain; width: 1.25rem; }
+.fediverse-status-link { text-decoration: underline; text-underline-offset: 0.2em; }
+.fediverse-replies { border-top: 1px solid var(--border); margin-top: 2rem; padding-top: 1rem; }
+.fediverse-replies h2 { font-size: 1.25rem; }
+.fediverse-reply-list { list-style: none; margin: 0; padding: 0; }
+.fediverse-reply { border-top: 1px solid var(--border); margin: 0; padding: 1rem 0; }
+.fediverse-reply-header { align-items: center; display: flex; gap: 0.65rem; }
+.fediverse-reply-avatar { border-radius: 50%; height: 2rem; object-fit: cover; width: 2rem; }
+.fediverse-reply-author { font-weight: 600; }
+.fediverse-reply-acct,
+.fediverse-reply-meta { color: var(--secondary); font-size: 0.85rem; }
+.fediverse-reply-content { overflow-wrap: anywhere; }
+.fediverse-profile { white-space: nowrap; }
+.fediverse-profile-count { color: var(--secondary); font-size: 0.85em; }
+</style>
+
+<script>
+document.querySelectorAll(".post-content img").forEach((image) => {
+  if (image.closest("figure, .katex, .MathJax, mjx-container, math")) return;
+  if (!image.alt.trim()) return;
+
+  const figure = document.createElement("figure");
+  figure.className = "html-image-figure";
+  const width = image.getAttribute("width");
+  if (width && /^\d+(?:\.\d+)?%$/.test(width.trim())) {
+    figure.style.width = width.trim();
+    image.removeAttribute("width");
+  }
+  image.parentNode.insertBefore(figure, image);
+  figure.append(image);
+
+  const caption = document.createElement("figcaption");
+  caption.textContent = image.alt;
+  figure.append(caption);
+});
+
+document.querySelectorAll(".post-content p").forEach(async (paragraph) => {
+  const link = paragraph.firstElementChild;
+  if (paragraph.children.length !== 1 || link?.tagName !== "A") return;
+  if (link.hasAttribute("data-no-preview")) return;
+  if (paragraph.textContent.trim() !== link.textContent.trim()) return;
+  if (link.textContent.trim() !== link.getAttribute("href")) return;
+  const url = new URL(link.href);
+  if (!["http:", "https:"].includes(url.protocol)) return;
+  if (url.origin === location.origin) return;
+
+  try {
+    const endpoint = new URL("https://api.microlink.io/");
+    endpoint.searchParams.set("url", url.href);
+    const response = await fetch(endpoint, {
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const result = await response.json();
+    if (result.status !== "success" || !result.data?.title) return;
+
+    const text = document.createElement("span");
+    text.className = "preview-text";
+    for (const [name, value] of [
+      ["title", result.data.title],
+      ["description", result.data.description],
+      ["host", url.hostname]
+    ]) {
+      if (!value) continue;
+      const element = document.createElement("span");
+      element.className = `preview-${name}`;
+      element.textContent = value;
+      text.append(element);
+    }
+    const contents = [text];
+    if (result.data.image?.url?.startsWith("https://")) {
+      const image = document.createElement("img");
+      image.src = result.data.image.url;
+      image.alt = "";
+      image.loading = "lazy";
+      image.onerror = () => { image.hidden = true; };
+      contents.push(image);
+    }
+    link.replaceChildren(...contents);
+    link.classList.add("url-preview");
+  } catch (error) {
+    console.warn("URL preview:", url.href, error);
+  }
+});
+
+const copyIcon = (state) => {
+  const namespace = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(namespace, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.8");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+
+  if (state === "check") {
+    const path = document.createElementNS(namespace, "path");
+    path.setAttribute("d", "m5 12 4 4L19 6");
+    svg.append(path);
+  } else if (state === "error") {
+    const path = document.createElementNS(namespace, "path");
+    path.setAttribute("d", "m18 6-12 12M6 6l12 12");
+    svg.append(path);
+  } else {
+    const back = document.createElementNS(namespace, "path");
+    back.setAttribute("d", "M8 8V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-3");
+    const front = document.createElementNS(namespace, "rect");
+    front.setAttribute("x", "3");
+    front.setAttribute("y", "8");
+    front.setAttribute("width", "12");
+    front.setAttribute("height", "13");
+    front.setAttribute("rx", "2");
+    svg.append(back, front);
+  }
+
+  return svg;
+};
+
+const copyText = async (text) => {
+  if (window.isSecureContext && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const activeElement = document.activeElement;
+  const selection = window.getSelection();
+  const ranges = selection
+    ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange())
+    : [];
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.append(textarea);
+
+  let copied;
+  try {
+    textarea.select();
+    copied = document.execCommand("copy");
+  } finally {
+    textarea.remove();
+    if (selection) {
+      selection.removeAllRanges();
+      ranges.forEach((range) => selection.addRange(range));
+    }
+    if (activeElement instanceof HTMLElement) activeElement.focus();
+  }
+  if (!copied) throw new Error("The browser rejected the copy command");
+};
+
+const copyFeedbackTimers = new WeakMap();
+document.querySelectorAll(".post-content pre > code").forEach((codeBlock) => {
+  const container = codeBlock.closest(".highlight") ?? codeBlock.parentElement;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "copy-code";
+  button.dataset.state = "idle";
+  button.setAttribute("aria-label", "コードをコピー");
+  button.setAttribute("aria-live", "polite");
+  button.title = "コードをコピー";
+  button.append(copyIcon("copy"));
+
+  button.addEventListener("click", async () => {
+    const source = codeBlock.cloneNode(true);
+    source.querySelectorAll('[style*="user-select:none"]').forEach((lineNumber) => lineNumber.remove());
+    const text = source.textContent ?? "";
+
+    try {
+      await copyText(text);
+      button.dataset.state = "copied";
+      button.setAttribute("aria-label", "コピーしました");
+      button.title = "コピーしました";
+      button.replaceChildren(copyIcon("check"));
+    } catch (error) {
+      console.error("Failed to copy code", error);
+      button.dataset.state = "error";
+      button.setAttribute("aria-label", "コピーに失敗しました");
+      button.title = "コピーに失敗しました";
+      button.replaceChildren(copyIcon("error"));
+    }
+
+    clearTimeout(copyFeedbackTimers.get(button));
+    copyFeedbackTimers.set(button, setTimeout(() => {
+      button.dataset.state = "idle";
+      button.setAttribute("aria-label", "コードをコピー");
+      button.title = "コードをコピー";
+      button.replaceChildren(copyIcon("copy"));
+    }, 1600));
+  });
+
+  container.append(button);
+});
+</script>
+  {{- $federationScript := resources.Get "js/blog-federation.js" | minify | fingerprint }}
+  <script src="{{ $federationScript.RelPermalink }}" integrity="{{ $federationScript.Data.Integrity }}" defer></script>

@@ -1,0 +1,24 @@
+{{- $pages := where site.RegularPages "Section" "posts" -}}
+{{- "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>" | safeHTML }}
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:publisher="urn:blog-publisher">
+  <channel>
+    <title>{{ .Site.Title | htmlEscape }}</title>
+    <link>{{ .Site.BaseURL }}</link>
+    <description>{{ with .Site.Params.description }}{{ . | htmlEscape }}{{ else }}{{ .Site.Title | htmlEscape }}{{ end }}</description>
+    <generator>Hugo</generator>
+    <language>{{ .Site.Language.Locale }}</language>
+    <lastBuildDate>{{ now.Format "Mon, 02 Jan 2006 15:04:05 -0700" }}</lastBuildDate>
+    <atom:link href="{{ .Site.BaseURL }}index.xml" rel="self" type="application/rss+xml" />
+    <publisher:full-content>1</publisher:full-content>
+    {{- range $pages.ByDate.Reverse }}
+    <item>
+      <title>{{ .Title | htmlEscape }}</title>
+      <link>{{ .Permalink }}</link>
+      <pubDate>{{ .Date.Format "Mon, 02 Jan 2006 15:04:05 -0700" }}</pubDate>
+      <guid>{{ .Permalink }}</guid>
+      <description>{{ .Summary | plainify | htmlEscape }}</description>
+      <content:encoded>{{ .Content | htmlEscape | safeHTML }}</content:encoded>
+    </item>
+    {{- end }}
+  </channel>
+</rss>

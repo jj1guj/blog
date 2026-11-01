@@ -1,0 +1,23 @@
+{
+  "name": "blog-hollo-publisher",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "test": "node --experimental-strip-types --test src/*.test.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mixmark-io/domino": "^2.2.0",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/turndown": "^5.0.6",
+    "typescript": "^5.9.0"
+  }
+}

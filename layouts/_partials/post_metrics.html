@@ -1,0 +1,32 @@
+{{- if and (eq .Section "posts") (not .Draft) }}
+<section
+  class="fediverse-stats"
+  data-fediverse-stats
+  data-post-path="{{ .RelPermalink }}"
+  data-media-proxy-url="{{ site.Params.mediaProxyURL }}"
+  hidden>
+  <ul class="fediverse-stats-list" aria-live="polite">
+    <li data-view-count title="閲覧数" hidden>
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2.5-4 5.8-6 10-6s7.5 2 10 6c-2.5 4-5.8 6-10 6s-7.5-2-10-6Z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span class="fediverse-stat-label">閲覧数 </span><span data-view-count-value>0</span>
+      <span data-view-count-unavailable title="閲覧数未取得（0は仮表示）" aria-label="閲覧数未取得。0は仮表示" hidden>!</span>
+    </li>
+    <li data-fediverse-count title="いいね" hidden>
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 14.8 8.8 21.2 9.7 16.6 14.2 17.7 20.5 12 17.5 6.3 20.5 7.4 14.2 2.8 9.7 9.2 8.8Z"/></svg>
+      <span class="fediverse-stat-label">いいね </span><span data-count="favourites_count">0</span>
+    </li>
+    <li data-fediverse-count title="ブースト" hidden>
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m17 3 4 4-4 4M3 11V9a2 2 0 0 1 2-2h16M7 21l-4-4 4-4M21 13v2a2 2 0 0 1-2 2H3"/></svg>
+      <span class="fediverse-stat-label">ブースト </span><span data-count="reblogs_count">0</span>
+    </li>
+    <li data-fediverse-count title="リアクション" hidden>
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r=".6" fill="currentColor"/><circle cx="15" cy="10" r=".6" fill="currentColor"/><path d="M8.5 14.5c1 1.2 2.2 1.8 3.5 1.8s2.5-.6 3.5-1.8"/></svg>
+      <span class="fediverse-stat-label">リアクション </span><span data-count="emoji_reactions">0</span>
+    </li>
+  </ul>
+  <div data-fediverse-social hidden>
+    <ul class="fediverse-reactions" data-reactions aria-label="絵文字リアクション" hidden></ul>
+    <p><a class="fediverse-status-link" data-status-link>Fediverse の投稿を見る</a></p>
+  </div>
+</section>
+{{- end }}
