@@ -1,4 +1,8 @@
 # 開発・ローカル連合確認用の設定です。本番では使わないでください。
+# compose.yml を読み込み、開発用の設定で上書きします。
+include:
+  - compose.yml
+
 services:
   caddy:
     environment:

@@ -28,21 +28,22 @@ Hollo からの通信には、[compose.dev.yml](../compose.dev.yml) の次の設
 - `local-fediverse-relay`：Hollo コンテナー内の `localhost:61812` を、ホストの Misskey へ中継します。
 - `ALLOW_PRIVATE_ADDRESS=true`：Hollo に localhost やプライベートアドレスとの通信を許可します。
 
-Hollo はアカウント作成時のホスト名を DB に保存します。既存の `localhost:28080` のアカウントを残すため、Compose のプロジェクト名を `blog-fedi-test` に分け、別の DB とボリュームを使います。作業ディレクトリと `.env` はいつもの `/Users/jj1guj/blog` のものを使います。
+Hollo はアカウント作成時のホスト名を DB に保存します。既存の環境のアカウントを残すため、Compose のプロジェクト名を `blog-fedi-test` に分け、別の DB とボリュームを使います。作業ディレクトリと `.env` は開発環境と同じものを使います。
 
 ## 前提
 
+- [開発環境のセットアップ](development-setup.md)が済んでいること。
 - Misskey がホストで `pnpm dev` によって動いており、URL が `http://localhost:61812` であること。ポートが異なる場合は、`.env` の `LOCAL_FEDIVERSE_PORT` を変更してください。
 - Node.js 20.6 以降（プロキシの起動に `--env-file` を使います）。
-- 以下のコマンドは、特に断りがなければ `/Users/jj1guj/blog` で実行します。
+- 以下のコマンドは、特に断りがなければリポジトリのルートで実行します。
 
 ## 1. 既存のブログを一時停止する
 
 ホストの `28080` を空けるため、また既存の publisher がテスト記事を投稿しないよう、既存環境の一部を止めます。再開時のために、停止前の状態を控えておいてください。
 
 ```sh
-docker compose -f compose.yml -f compose.dev.yml ps -a
-docker compose -f compose.yml -f compose.dev.yml stop caddy goatcounter hugo publisher
+docker compose -f compose.dev.yml ps -a
+docker compose -f compose.dev.yml stop caddy goatcounter hugo publisher
 ```
 
 既存の Hollo と PostgreSQL は動いたままでも問題ありません。
@@ -74,13 +75,13 @@ docker volume ls --filter label=com.docker.compose.project=blog-fedi-test
 起動します。Caddy が依存する Hugo と GoatCounter も起動します。
 
 ```sh
-docker compose -p blog-fedi-test -f compose.yml -f compose.dev.yml \
+docker compose -p blog-fedi-test -f compose.dev.yml \
   up -d --pull never caddy hollo local-fediverse-relay
 ```
 
 ## 4. プロキシを起動する
 
-別の端末を開き、`/Users/jj1guj/blog` で次を実行します。確認が終わるまで起動したままにします。
+別の端末を開き、リポジトリのルートで次を実行します。確認が終わるまで起動したままにします。
 
 ```sh
 node --env-file=.env tools/local-fediverse-proxy.cjs
@@ -121,7 +122,7 @@ node --env-file=.env tools/local-fediverse-proxy.cjs
 ## 6. Hollo の初期設定とアカウントを作る
 
 1. ブラウザーで管理用ポートの `http://localhost:28082/setup` を開き、管理者を作成します。`/setup` は `http://blog.local` からは開けません。ポートを変更している場合は、`.env` の `HOLLO_ADMIN_PORT` に置き換えてください。
-2. `http://localhost:28082/accounts` で、ユーザー名 `blog` のアカウントを作成します。管理用ポートは Hollo に `blog.local` として要求を渡すため、アカウントの URL は `http://blog.local/@blog` になります。
+2. `http://localhost:28082/accounts/new` で、ユーザー名 `blog` のアカウントを作成します。管理用ポートは Hollo に `blog.local` として要求を渡すため、アカウントの URL は `http://blog.local/@blog` になります。
 
 アカウントの URL を確認します。
 
@@ -325,20 +326,20 @@ Misskey のタイムラインで、次の点を確認します。
 
 表示を確認するだけなら、GoatCounterのサイト作成は不要です。閲覧数を取得できない場合は0を仮表示し、横に `!` を添えます。
 
-実際の閲覧数を表示するには、GoatCounterのサイトを作成します。`blog-fedi-test` は既存環境と別のGoatCounterデータを使います。すでに作成済みの場合は、設定画面の確認から進めてください。
+実際の閲覧数を表示するには、GoatCounter のサイトを作成します。`blog-fedi-test` は既存環境と別の GoatCounter データを使います。すでに作成済みの場合は、設定画面の確認から進めてください。
 
 1. 管理用ポートの `http://localhost:28083/` を開きます。ポートを変更している場合は、`.env` の `STATS_ADMIN_PORT` に置き換えてください。サイトの作成画面が表示されたら、ドメイン欄が `STATS_DOMAIN` の値になっていることを確かめ、メールアドレスとパスワードを入力して作成します。作成済みの場合は、`http://localhost:28083/user/new` でログインします。
 2. 「Settings」→「Site settings」で「Allow adding visitor counts on your website」を有効にして保存します。
-3. 記事ページを再読み込みします。記録がなければ閲覧数は0と表示されます。`localhost` で開いたページは、GoatCounterの既定の設定では計測されません。`blog.local` は既定の除外対象ではありません。
+3. 記事ページを再読み込みします。記録がなければ閲覧数は0と表示されます。`localhost` で開いたページは、GoatCounter の既定の設定では計測されません。`blog.local` は既定の除外対象ではありません。
 
-GoatCounterのサイトが未作成の場合、`/gc/counter/` への要求は `307` と `Location: /` を返します。設定を保存しても閲覧数が表示されない場合は、ブラウザーの開発者コンソールで `Failed to load GoatCounter pageview count` を確認してください。`403` の場合は、手順2の設定を確認します。
+GoatCounter のサイトが未作成の場合、`/gc/counter/` への要求は `307` と `Location: /` を返します。設定を保存しても閲覧数が表示されない場合は、ブラウザーの開発者コンソールで `Failed to load GoatCounter pageview count` を確認してください。`403` の場合は、手順2の設定を確認します。
 
 ## 12. 終了後の片付け
 
 1. テスト用の環境を停止します。ボリュームは削除されません。
 
    ```sh
-   docker compose -p blog-fedi-test -f compose.yml -f compose.dev.yml stop
+   docker compose -p blog-fedi-test -f compose.dev.yml stop
    ```
 
 2. プロキシを起動した端末で `Ctrl+C` を押して止めます。
@@ -349,8 +350,8 @@ GoatCounterのサイトが未作成の場合、`/gc/counter/` への要求は `3
 7. 手順1で止めたサービスのうち、止める前に動いていたものを再開します。
 
    ```sh
-   docker compose -f compose.yml -f compose.dev.yml start hugo goatcounter caddy
-   docker compose -f compose.yml -f compose.dev.yml start publisher
+   docker compose -f compose.dev.yml start hugo goatcounter caddy
+   docker compose -f compose.dev.yml start publisher
    ```
 
 ## うまくいかないとき
