@@ -28,6 +28,9 @@ defaultContentLanguage = 'ja'
 [markup.highlight]
   noClasses = true
   style = 'monokai'
+# URL プレビュー（SUMMARY_PROXY_URL）の取得結果を 1 週間ごとに取り直す。
+[caches.getresource]
+  maxAge = '168h'
 [params]
   # 自動判定だと、公開記事がない状態で起動したときにトップの一覧が空のままになる。
   mainSections = ['posts']

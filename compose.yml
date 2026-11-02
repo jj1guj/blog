@@ -37,6 +37,7 @@ services:
       # ソースは読み取り専用のため、ロックファイルを作らない。
       HUGO_NOBUILDLOCK: "true"
       HUGO_PARAMS_MEDIAPROXYURL: ${MEDIA_PROXY_URL:-}
+      HUGO_PARAMS_SUMMARYPROXYURL: ${SUMMARY_PROXY_URL:-}
     volumes:
       - ./:/src:ro
       - hugo_cache:/cache

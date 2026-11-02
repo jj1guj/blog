@@ -11,8 +11,38 @@
     {{- with $u.Fragment }}{{ $href = printf "%s#%s" $href . }}{{ end -}}
   {{- end -}}
 {{- end -}}
+{{- /* URL だけのリンクは、ビルド時にサマリープロキシから取得したプレビューを埋め込む。 */ -}}
+{{- $preview := dict -}}
+{{- $proxy := site.Params.summaryProxyURL | default "" -}}
+{{- if and $proxy (in (slice "http" "https") $u.Scheme) (eq (string .PlainText) .Destination) -}}
+  {{- $separator := cond (strings.Contains $proxy "?") "&" "?" -}}
+  {{- $endpoint := printf "%s%s%s" $proxy $separator (querify "url" .Destination "lang" site.Language.Lang) -}}
+  {{- with try (resources.GetRemote $endpoint) -}}
+    {{- with .Err -}}
+      {{- warnf "URL preview: %s: %s" $endpoint . -}}
+    {{- else with .Value -}}
+      {{- with try (transform.Unmarshal .) -}}
+        {{- with .Err -}}
+          {{- warnf "URL preview: %s: %s" $endpoint . -}}
+        {{- else -}}
+          {{- if reflect.IsMap .Value }}{{ $preview = .Value }}{{ end -}}
+        {{- end -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
 <a href="{{ $href | safeURL }}"
   {{- with .Title }} title="{{ . }}"{{ end }}
   {{- if not $isFragment }} target="_blank" rel="noopener noreferrer"{{ end -}}
+  {{- with $preview.title }} data-preview-title="{{ . }}"{{ end -}}
+  {{- with $preview.description }} data-preview-description="{{ . }}"{{ end -}}
+  {{- with $preview.thumbnail -}}
+    {{- $imageURL := . -}}
+    {{- $thumbnailURL := urls.Parse . -}}
+    {{- if and (eq $thumbnailURL.Host $u.Host) (strings.HasPrefix $thumbnailURL.Path "//") -}}
+      {{- $imageURL = printf "%s://%s" $u.Scheme (strings.TrimPrefix "//" $thumbnailURL.Path) -}}
+    {{- end -}}
+    {{- if and (not $preview.sensitive) (strings.HasPrefix $imageURL "https://") }} data-preview-image="{{ $imageURL }}"{{ end -}}
+  {{- end -}}
 >{{ .Text | safeHTML }}</a>
 {{- /* chomp trailing newline */ -}}

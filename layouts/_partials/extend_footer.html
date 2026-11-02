@@ -63,6 +63,31 @@ document.querySelectorAll(".post-content a[href]").forEach((link) => {
   link.rel = "noopener noreferrer";
 });
 
+const fetchPreview = async (link, url) => {
+  // SUMMARY_PROXY_URL を指定したときは、Hugo がビルド時に埋め込んだ値だけを使う。
+  if ({{ ne (site.Params.summaryProxyURL | default "") "" }}) {
+    const { previewTitle, previewDescription, previewImage } = link.dataset;
+    if (!previewTitle) return null;
+    return {
+      title: previewTitle,
+      description: previewDescription,
+      image: previewImage
+    };
+  }
+
+  const endpoint = new URL("https://api.microlink.io/");
+  endpoint.searchParams.set("url", url.href);
+  const response = await fetch(endpoint, { signal: AbortSignal.timeout(15000) });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const result = await response.json();
+  if (result.status !== "success") return null;
+  return {
+    title: result.data?.title,
+    description: result.data?.description,
+    image: result.data?.image?.url
+  };
+};
+
 document.querySelectorAll(".post-content p").forEach(async (paragraph) => {
   const link = paragraph.firstElementChild;
   if (paragraph.children.length !== 1 || link?.tagName !== "A") return;
@@ -74,20 +99,14 @@ document.querySelectorAll(".post-content p").forEach(async (paragraph) => {
   if (url.origin === location.origin) return;
 
   try {
-    const endpoint = new URL("https://api.microlink.io/");
-    endpoint.searchParams.set("url", url.href);
-    const response = await fetch(endpoint, {
-      signal: AbortSignal.timeout(15000)
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const result = await response.json();
-    if (result.status !== "success" || !result.data?.title) return;
+    const preview = await fetchPreview(link, url);
+    if (!preview?.title) return;
 
     const text = document.createElement("span");
     text.className = "preview-text";
     for (const [name, value] of [
-      ["title", result.data.title],
-      ["description", result.data.description],
+      ["title", preview.title],
+      ["description", preview.description],
       ["host", url.hostname]
     ]) {
       if (!value) continue;
@@ -97,12 +116,13 @@ document.querySelectorAll(".post-content p").forEach(async (paragraph) => {
       text.append(element);
     }
     const contents = [text];
-    if (result.data.image?.url?.startsWith("https://")) {
+    if (preview.image?.startsWith("https://")) {
       const image = document.createElement("img");
-      image.src = result.data.image.url;
+      image.src = preview.image;
       image.alt = "";
       image.loading = "lazy";
-      image.onerror = () => { image.hidden = true; };
+      // テーマの CSS が display: block を指定しており hidden が効かないため、要素ごと取り除く。
+      image.onerror = () => { image.remove(); };
       contents.push(image);
     }
     link.replaceChildren(...contents);
