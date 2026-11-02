@@ -56,6 +56,13 @@ document.querySelectorAll(".post-content img").forEach((image) => {
   figure.append(caption);
 });
 
+// 記事に直接書いた <a> タグは render-link.html を通らないため、ここで別タブ指定を補う。
+document.querySelectorAll(".post-content a[href]").forEach((link) => {
+  if (link.getAttribute("href").startsWith("#") || link.hasAttribute("target")) return;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+});
+
 document.querySelectorAll(".post-content p").forEach(async (paragraph) => {
   const link = paragraph.firstElementChild;
   if (paragraph.children.length !== 1 || link?.tagName !== "A") return;

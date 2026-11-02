@@ -1,0 +1,18 @@
+{{- $u := urls.Parse .Destination -}}
+{{- $href := .Destination -}}
+{{- $isFragment := strings.HasPrefix .Destination "#" -}}
+{{- if $isFragment -}}
+  {{- $href = printf "%s#%s" .PageInner.RelPermalink $u.Fragment -}}
+{{- else if and $href (not $u.IsAbs) -}}
+  {{- $path := strings.TrimPrefix "./" $u.Path -}}
+  {{- with or (.PageInner.GetPage $path) (.PageInner.Resources.Get $path) -}}
+    {{- $href = .RelPermalink -}}
+    {{- with $u.RawQuery }}{{ $href = printf "%s?%s" $href . }}{{ end -}}
+    {{- with $u.Fragment }}{{ $href = printf "%s#%s" $href . }}{{ end -}}
+  {{- end -}}
+{{- end -}}
+<a href="{{ $href | safeURL }}"
+  {{- with .Title }} title="{{ . }}"{{ end }}
+  {{- if not $isFragment }} target="_blank" rel="noopener noreferrer"{{ end -}}
+>{{ .Text | safeHTML }}</a>
+{{- /* chomp trailing newline */ -}}
