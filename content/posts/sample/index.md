@@ -95,10 +95,12 @@ https://jiskey.dev
 
 URLプレビューを表示したくない場合はこのように書きます。
 
-```html
-<a href="https://jiskey.dev" data-no-preview>https://jiskey.dev</a>
+```markdown
+https://jiskey.dev
+{.no-preview}
 ```
 
 するとこのようになります。
 
-<a href="https://jiskey.dev" data-no-preview>https://jiskey.dev</a>
+https://jiskey.dev
+{.no-preview}

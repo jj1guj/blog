@@ -66,7 +66,7 @@ document.querySelectorAll(".post-content a[href]").forEach((link) => {
 document.querySelectorAll(".post-content p").forEach(async (paragraph) => {
   const link = paragraph.firstElementChild;
   if (paragraph.children.length !== 1 || link?.tagName !== "A") return;
-  if (link.hasAttribute("data-no-preview")) return;
+  if (paragraph.classList.contains("no-preview") || link.hasAttribute("data-no-preview")) return;
   if (paragraph.textContent.trim() !== link.textContent.trim()) return;
   if (link.textContent.trim() !== link.getAttribute("href")) return;
   const url = new URL(link.href);
