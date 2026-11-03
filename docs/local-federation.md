@@ -72,10 +72,10 @@ PUBLISH_EXISTING_ON_FIRST_RUN=false
 docker volume ls --filter label=com.docker.compose.project=blog-fedi-test
 ```
 
-起動します。Caddy が依存する Hugo と GoatCounter も起動します。
+起動します。初期設定に使う管理用ポートを開くため、[compose.admin.yml](../compose.admin.yml) も指定します。開発用の設定を優先するため、`-f compose.admin.yml -f compose.dev.yml` の順にしてください。Caddy が依存する Hugo と GoatCounter も起動します。
 
 ```sh
-docker compose -p blog-fedi-test -f compose.dev.yml \
+docker compose -p blog-fedi-test -f compose.admin.yml -f compose.dev.yml \
   up -d --pull never caddy hollo local-fediverse-relay
 ```
 
