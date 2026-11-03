@@ -44,7 +44,39 @@ function absoluteUrl(value: string, articleUrl: string, image: boolean): string 
   if (!allowedProtocols.includes(url.protocol)) {
     throw new Error(`Unsupported ${image ? "image" : "link"} URL: ${value}`);
   }
+  if (image && (url.username || url.password)) {
+    throw new Error("Image URL must not contain credentials");
+  }
   return url.href;
+}
+
+function imageUrl(image: Element, articleUrl: string): string {
+  const src = image.getAttribute("src");
+  if (!src?.trim()) throw new Error("Image has no URL");
+  return absoluteUrl(src, articleUrl, true);
+}
+
+export interface ArticleImage {
+  url: string;
+  description: string;
+}
+
+export function extractArticleImages(html: string, articleUrl: string): ArticleImage[] {
+  const document = createDocument();
+  const root = document.createElement("div");
+  root.innerHTML = html;
+  const images = new Map<string, ArticleImage>();
+  for (const image of Array.from(root.querySelectorAll("img"))) {
+    const url = new URL(imageUrl(image, articleUrl));
+    url.hash = "";
+    if (!images.has(url.href)) {
+      images.set(url.href, {
+        url: url.href,
+        description: image.getAttribute("alt") ?? "",
+      });
+    }
+  }
+  return [...images.values()];
 }
 
 function prepareArticle(root: HTMLElement, articleUrl: string): void {
@@ -87,9 +119,7 @@ function prepareArticle(root: HTMLElement, articleUrl: string): void {
     if (href !== null) link.setAttribute("href", absoluteUrl(href, articleUrl, false));
   }
   for (const image of Array.from(root.querySelectorAll("img"))) {
-    const src = image.getAttribute("src");
-    if (!src?.trim()) throw new Error("Image has no URL");
-    image.setAttribute("src", absoluteUrl(src, articleUrl, true));
+    image.setAttribute("src", imageUrl(image, articleUrl));
   }
 }
 

@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { readFile, mkdir, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { readFile, mkdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createArticleStatus } from "./markdown.ts";
+import { createArticleStatus, extractArticleImages, type ArticleImage } from "./markdown.ts";
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -325,7 +325,9 @@ function getStatusResponse(value: unknown): PublishedPost {
   };
 }
 
-async function getStatusCharacterLimit(options: PublisherOptions): Promise<number> {
+async function getStatusLimits(
+  options: PublisherOptions,
+): Promise<{ characters: number; mediaAttachments: unknown }> {
   const endpoint = new URL("/api/v2/instance", options.holloApiUrl);
   const response = await (options.fetchImpl ?? fetch)(endpoint, {
     headers: forwardedHeaders(options.blogUrl),
@@ -347,12 +349,97 @@ async function getStatusCharacterLimit(options: PublisherOptions): Promise<numbe
       body.configuration.statuses.max_characters <= 0) {
     throw new Error("Hollo character limit is invalid");
   }
-  return body.configuration.statuses.max_characters;
+  return {
+    characters: body.configuration.statuses.max_characters,
+    mediaAttachments: body.configuration.statuses.max_media_attachments,
+  };
+}
+
+const IMAGE_MIME_TYPES: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".svg": "image/svg+xml",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
+};
+
+async function loadImage(image: ArticleImage, options: PublisherOptions): Promise<Blob> {
+  const url = new URL(image.url);
+  if (url.origin === new URL(options.blogUrl).origin) {
+    // 公開 URL が localhost でも取得できるよう、Hugo の共有ボリュームから読む。
+    const directory = await realpath(dirname(options.feedPath));
+    const filePath = resolve(directory, `.${decodeURIComponent(url.pathname)}`);
+    if (!filePath.startsWith(`${directory}${sep}`)) {
+      throw new Error("Image path is outside the Hugo public directory");
+    }
+    const type = IMAGE_MIME_TYPES[extname(filePath).toLowerCase()];
+    if (!type) throw new Error("Unsupported local image file extension");
+    const resolvedPath = await realpath(filePath);
+    if (!resolvedPath.startsWith(`${directory}${sep}`)) {
+      throw new Error("Image path is outside the Hugo public directory");
+    }
+    return new Blob([await readFile(resolvedPath)], { type });
+  }
+  const response = await (options.fetchImpl ?? fetch)(url, {
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch article image: HTTP ${response.status}`);
+  }
+  const blob = await response.blob();
+  if (!blob.type.startsWith("image/")) {
+    throw new Error("Article image response has no image content type");
+  }
+  return blob;
+}
+
+async function uploadImages(
+  images: ArticleImage[],
+  options: PublisherOptions,
+): Promise<string[]> {
+  const ids: string[] = [];
+  for (const image of images) {
+    const blob = await loadImage(image, options);
+    const form = new FormData();
+    form.set("file", blob, basename(new URL(image.url).pathname) || "image");
+    form.set("description", image.description);
+    const response = await (options.fetchImpl ?? fetch)(
+      new URL("/api/v1/media", options.holloApiUrl),
+      {
+        method: "POST",
+        headers: {
+          ...forwardedHeaders(options.blogUrl),
+          Authorization: `Bearer ${options.accessToken}`,
+        },
+        body: form,
+        signal: AbortSignal.timeout(60_000),
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to upload image to Hollo: HTTP ${response.status}`);
+    }
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      throw new Error("Failed to parse Hollo media response as JSON");
+    }
+    if (!isRecord(body) || typeof body.id !== "string" || !body.id) {
+      throw new Error("Hollo media response has no id");
+    }
+    ids.push(body.id);
+  }
+  return ids;
 }
 
 async function createStatus(
   item: FeedItem,
   status: string,
+  mediaIds: string[],
   options: PublisherOptions,
 ): Promise<PublishedPost> {
   const endpoint = new URL("/api/v1/statuses", options.holloApiUrl);
@@ -369,6 +456,7 @@ async function createStatus(
       status,
       visibility: "public",
       language: "ja",
+      ...(mediaIds.length > 0 ? { media_ids: mediaIds } : {}),
     }),
     signal: AbortSignal.timeout(15_000),
   });
@@ -415,19 +503,32 @@ export async function publishNewItems(
   }
   if (newItems.length === 0) return { baselineSkipped: 0, published: 0 };
 
-  const characterLimit = await getStatusCharacterLimit(options);
+  const limits = await getStatusLimits(options);
   let published = 0;
   const failures: string[] = [];
   for (const item of newItems) {
     if (seenPaths.has(item.path)) continue;
     let post: PublishedPost;
     try {
+      const html = item.contentHtml;
+      if (html === undefined) throw new Error("RSS item has no full content");
       const status = createStatusText(item);
       const length = Array.from(status).length;
-      if (length > characterLimit) {
-        throw new Error(`Status is ${length} characters (Hollo limit: ${characterLimit})`);
+      if (length > limits.characters) {
+        throw new Error(`Status is ${length} characters (Hollo limit: ${limits.characters})`);
       }
-      post = await createStatus(item, status, options);
+      const images = extractArticleImages(html, item.url);
+      if (images.length > 0) {
+        if (typeof limits.mediaAttachments !== "number" ||
+            !Number.isSafeInteger(limits.mediaAttachments) || limits.mediaAttachments < 0) {
+          throw new Error("Hollo media attachment limit is invalid");
+        }
+        if (images.length > limits.mediaAttachments) {
+          throw new Error(`Article has ${images.length} images (Hollo limit: ${limits.mediaAttachments})`);
+        }
+      }
+      const mediaIds = await uploadImages(images, options);
+      post = await createStatus(item, status, mediaIds, options);
     } catch (error) {
       failures.push(`${item.path}: ${errorMessage(error)}`);
       continue;

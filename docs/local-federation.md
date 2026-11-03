@@ -197,7 +197,7 @@ curl --fail --silent --show-error \
   --noproxy '' --proxy http://127.0.0.1:28084 \
   --data-urlencode 'client_name=Hugo Publisher' \
   --data-urlencode 'redirect_uris=urn:ietf:wg:oauth:2.0:oob' \
-  --data-urlencode 'scopes=write:statuses' \
+  --data-urlencode 'scopes=write:statuses write:media' \
   http://blog.local/api/v1/apps
 ```
 
@@ -208,7 +208,7 @@ curl --fail --silent --show-error \
 次の URL の `CLIENT_ID` を置き換え、プロキシを設定したブラウザーで開きます。管理者でログインし、`blog` アカウントを選んで許可します。
 
 ```text
-http://blog.local/oauth/authorize?response_type=code&client_id=CLIENT_ID&redirect_uri=urn:ietf:wg:oauth:2.0:oob&scope=write:statuses
+http://blog.local/oauth/authorize?response_type=code&client_id=CLIENT_ID&redirect_uri=urn:ietf:wg:oauth:2.0:oob&scope=write:statuses%20write:media
 ```
 
 **画面に表示されるのは認可コードで、アクセストークンではありません。** このまま `.env` に設定すると、投稿が `HTTP 401` になります。認可コードの有効期間は10分です。

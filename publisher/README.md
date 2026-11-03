@@ -4,11 +4,15 @@ Hugo のホーム RSS を30秒ごとに確認し、新しい記事を Hollo に�
 
 RSS の本文は Hugo が生成した HTML から Markdown に変換します。画像とリンクの相対 URL は記事 URL を基準に絶対 URL にします。コード、表、画像のキャプション、数式の TeX も本文に含めます。変換できない要素がある場合は投稿せず、エラーを出します。動画や iframe、見出し行のない表、セルを結合した表、セル内に段落や改行を含む表などが対象です。
 
-画像は Markdown 内の画像リンクとして送信し、Hollo のメディア添付としてはアップロードしません。画像や数式を含む投稿の表示は、受信側のソフトウェアによって異なります。ブログ側の画像サイズやリンクプレビューの設定も投稿先には引き継がれません。
+本文中の画像は、Markdown 内の画像リンクを残したまま、Hollo にアップロードしてメディアとしても添付します。画像の代替テキスト（`alt`）は添付画像の説明に使います。同じ画像 URL は、フラグメント（`#center` など）を除いて比較し、本文に登場する順に一度だけ添付します。ブログ内の画像は RSS と同じ Hugo の公開ディレクトリから読み、外部画像は HTTP/HTTPS で取得します。添付数が Hollo の公称上限（現在は8枚）を超える場合や、画像の取得・アップロードに失敗した場合は、その記事を投稿せずエラーを出し、次回の確認で再試行します。投稿済みの記事に後から画像を追加しても反映されません。
+
+途中で失敗した場合、既にアップロードした画像は Hollo に残ることがあります。再試行時は画像を再アップロードします。
+
+画像や数式を含む投稿の表示は、受信側のソフトウェアによって異なります。ブログ側の画像サイズやリンクプレビューの設定も投稿先には引き継がれません。
 
 ## 投稿の開始と更新
 
-`.env` に OAuth で発行した `HOLLO_ACCESS_TOKEN` を設定します。通常構成では `PUBLISH_ENABLED=true` が既定です。開発用の `compose.dev.yml` では自動投稿は無効です。
+`.env` に OAuth で発行した `HOLLO_ACCESS_TOKEN` を設定します。必要な権限は `write:statuses` と `write:media` です。既存のトークンが `write:statuses` のみの場合は、両方の権限でアプリを登録・認可し直し、トークンを更新してください。通常構成では `PUBLISH_ENABLED=true` が既定です。開発用の `compose.dev.yml` では自動投稿は無効です。
 
 `BLOG_URL` は Hugo、Caddy、publisher と Hollo のメディア URL で共通に使います。末尾の `/` は付けないでください。Caddy はこの URL の `http` または `https` を Hollo に伝えるため、公開環境ではブログの HTTPS URL を指定してください。空欄の場合、通常構成では `https://BLOG_DOMAIN`、開発用構成では `http://127.0.0.1:CADDY_PORT` を使います。
 
@@ -109,14 +113,14 @@ docker compose -f compose.admin.yml up -d --pull never hugo hollo caddy
 curl --fail --silent --show-error \
   --data-urlencode 'client_name=Hugo Publisher' \
   --data-urlencode 'redirect_uris=urn:ietf:wg:oauth:2.0:oob' \
-  --data-urlencode 'scopes=write:statuses' \
+  --data-urlencode 'scopes=write:statuses write:media' \
   http://localhost:28080/api/v1/apps
 ```
 
 応答の `client_id` と `client_secret` を手元に控えます。次の URL の `CLIENT_ID` を取得した値に置き換え、ブラウザーで開きます。
 
 ```text
-http://localhost:28080/oauth/authorize?response_type=code&client_id=CLIENT_ID&redirect_uri=urn:ietf:wg:oauth:2.0:oob&scope=write:statuses
+http://localhost:28080/oauth/authorize?response_type=code&client_id=CLIENT_ID&redirect_uri=urn:ietf:wg:oauth:2.0:oob&scope=write:statuses%20write:media
 ```
 
 管理者としてログインし、対象の `blog` アカウントを選んで許可すると、認可コードが画面に表示されます。コードの有効期間は10分です。
@@ -163,6 +167,8 @@ draft: false
 3000文字超の本文を試す場合は、`node -e 'console.log("本文確認。".repeat(650))'` の出力を本文に貼り付けられます。保存後、通常は30秒程度で投稿されます。
 
 `http://localhost:28080/@blog` と投稿対応表で投稿を確認します。記事 URL が先頭にあること、タイトルと本文が続くこと、末尾の「確認終了。」まであることを確認してください。
+
+画像の添付を確認する場合は、記事と同じディレクトリに `photo.png` を置き、本文に `![画像の説明](photo.png)` を追加してから公開します。Hollo の投稿に画像が添付され、画像の説明も付いていることを確認してください。既に投稿した記事ではなく、新しいパスの記事で試してください。
 
 記事を削除しても Hollo の投稿は自動削除されません。確認が終わったら `docker compose -f compose.yml stop publisher` で投稿を停止できます。
 

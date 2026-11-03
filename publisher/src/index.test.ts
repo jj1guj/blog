@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -15,6 +15,7 @@ import {
   type FeedItem,
   type PublisherOptions,
 } from "./index.ts";
+import { extractArticleImages } from "./markdown.ts";
 
 const blogUrl = "https://blog.example";
 
@@ -71,6 +72,7 @@ function mockHollo(characterLimit = 10000) {
         configuration: {
           statuses: {
             max_characters: characterLimit,
+            max_media_attachments: 8,
             characters_reserved_per_url: 256,
           },
         },
@@ -97,6 +99,218 @@ test("RSS から記事の全文 HTML と正規化された URL を取得する",
     url: "https://blog.example/posts/first/",
     publishedAt: "Sat, 31 Oct 2026 00:00:00 +0000",
   });
+});
+
+test("画像 URL と代替テキストを抽出し、フラグメント違いの重複をまとめる", () => {
+  assert.deepEqual(extractArticleImages([
+    '<figure><img src="photo.png#center" alt="図 &amp; 説明"></figure>',
+    '<img src="/posts/images/photo.png#other" alt="重複">',
+    '<img src="//images.example/other.jpg?size=2">',
+  ].join(""), `${blogUrl}/posts/images/`), [
+    { url: `${blogUrl}/posts/images/photo.png`, description: "図 & 説明" },
+    { url: "https://images.example/other.jpg?size=2", description: "" },
+  ]);
+  assert.deepEqual(extractArticleImages("<p>画像なし</p>", blogUrl), []);
+  assert.throws(() => extractArticleImages("<img>", blogUrl), /Image has no URL/);
+  assert.throws(
+    () => extractArticleImages('<img src="https://user:password@images.example/a.png">', blogUrl),
+    /must not contain credentials/,
+  );
+});
+
+test("記事バンドルと外部の画像を順にアップロードし、説明付きで新規投稿に添付する", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const feedPath = join(directory, "index.xml");
+  await mkdir(join(directory, "posts", "images"), { recursive: true });
+  const bytes = new Uint8Array([137, 80, 78, 71]);
+  await writeFile(join(directory, "posts", "images", "構成.png"), bytes);
+  const html = [
+    '<figure><img src="構成.png#center" alt="システム構成図"><figcaption>構成</figcaption></figure>',
+    '<img src="./%E6%A7%8B%E6%88%90.png" alt="重複">',
+    '<img src="https://images.example/other.jpg" alt="写真">',
+  ].join("");
+  await writeFile(feedPath, feed([item("images", "画像付き記事", html)]));
+  const mock = mockHollo();
+  const uploads: RequestInit[] = [];
+  let downloads = 0;
+  const fetchImpl: typeof fetch = async (input, init = {}) => {
+    const url = String(input);
+    if (url === "https://images.example/other.jpg") {
+      downloads++;
+      const headers = new Headers(init.headers);
+      assert.equal(headers.get("authorization"), null);
+      assert.equal(headers.get("x-forwarded-host"), null);
+      return new Response(bytes, { headers: { "Content-Type": "image/jpeg" } });
+    }
+    if (url.endsWith("/api/v1/media")) {
+      uploads.push(init);
+      assert.equal(init.method, "POST");
+      const headers = new Headers(init.headers);
+      assert.equal(headers.get("authorization"), "Bearer test-token-never-log");
+      assert.equal(headers.get("x-forwarded-host"), "localhost:28080");
+      assert.equal(headers.get("x-forwarded-proto"), "http");
+      assert.equal(headers.get("content-type"), null);
+      assert.ok(init.body instanceof FormData);
+      const file = init.body.get("file");
+      assert.ok(file instanceof File);
+      assert.deepEqual(new Uint8Array(await file.arrayBuffer()), bytes);
+      assert.equal(file.type, uploads.length === 1 ? "image/png" : "image/jpeg");
+      assert.equal(init.body.get("description"), uploads.length === 1 ? "システム構成図" : "写真");
+      return Response.json({ id: `media-${uploads.length}` });
+    }
+    return mock.fetchImpl(input, init);
+  };
+  const config = {
+    ...options(feedPath, join(directory, "posts.json"), fetchImpl, true),
+    blogUrl: "http://localhost:28080",
+  };
+  assert.deepEqual(await publishNewItems(config), { baselineSkipped: 0, published: 1 });
+  const posted = JSON.parse(String(mock.calls[1].init.body));
+  assert.deepEqual(posted.media_ids, ["media-1", "media-2"]);
+  assert.ok(posted.status.includes("![システム構成図]"));
+  assert.ok(posted.status.includes("構成"));
+  assert.equal(posted.visibility, "public");
+  assert.equal(posted.language, "ja");
+  assert.deepEqual(await publishNewItems(config), { baselineSkipped: 0, published: 0 });
+  assert.equal(uploads.length, 2);
+  assert.equal(downloads, 1);
+  assert.ok((await loadPostMap(config.mapPath)).posts["/posts/images/"]);
+});
+
+test("添付数上限ちょうどは投稿し、超過や不正な上限はアップロード前に拒否する", async (t) => {
+  for (const limit of [2, 1, 0, undefined, -1, 1.5]) {
+    await t.test(`limit=${limit}`, async (subtest) => {
+      const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+      subtest.after(() => rm(directory, { recursive: true, force: true }));
+      const feedPath = join(directory, "index.xml");
+      await writeFile(feedPath, feed([item("limits", "画像", '<img src="/a.png"><img src="/b.png">')]));
+      await writeFile(join(directory, "a.png"), "a");
+      await writeFile(join(directory, "b.png"), "b");
+      let uploaded = 0;
+      let posted = 0;
+      const fetchImpl: typeof fetch = async (input, init = {}) => {
+        const url = String(input);
+        if (url.endsWith("/api/v2/instance")) {
+          return Response.json({ configuration: { statuses: {
+            max_characters: 10000,
+            max_media_attachments: limit,
+          } } });
+        }
+        if (url.endsWith("/api/v1/media")) {
+          return Response.json({ id: `media-${++uploaded}` });
+        }
+        posted++;
+        assert.deepEqual(JSON.parse(String(init.body)).media_ids, ["media-1", "media-2"]);
+        return Response.json({ id: "status", url: `${blogUrl}/@blog/status` });
+      };
+      const config = options(feedPath, join(directory, "posts.json"), fetchImpl, true);
+      if (limit === 2) {
+        assert.deepEqual(await publishNewItems(config), { baselineSkipped: 0, published: 1 });
+        assert.equal(uploaded, 2);
+        assert.equal(posted, 1);
+      } else {
+        await assert.rejects(publishNewItems(config), /Hollo limit:|attachment limit is invalid/);
+        assert.equal(uploaded, 0);
+        assert.equal(posted, 0);
+        assert.deepEqual((await loadPostMap(config.mapPath)).seenPaths, []);
+      }
+    });
+  }
+});
+
+test("画像の取得・アップロード失敗では記事を記録せず、他の記事を投稿する", async (t) => {
+  const cases = [
+    { name: "取得失敗", image: "https://images.example/a.png", download: () => new Response("", { status: 404 }), pattern: /HTTP 404/ },
+    { name: "画像以外", image: "https://images.example/a.png", download: () => new Response("html", { headers: { "Content-Type": "text/html" } }), pattern: /no image content type/ },
+    { name: "ローカル欠落", image: "/missing.png", pattern: /ENOENT/ },
+    { name: "パス逸脱", image: "/..%2foutside.png", pattern: /outside the Hugo public directory/ },
+    { name: "リンク先逸脱", image: "/outside.png", pattern: /outside the Hugo public directory/ },
+    { name: "権限不足", image: "/a.png", upload: () => new Response("sensitive response", { status: 403 }), pattern: /HTTP 403/ },
+    { name: "不正な JSON", image: "/a.png", upload: () => new Response("{"), pattern: /parse Hollo media response/ },
+    { name: "ID 欠落", image: "/a.png", upload: () => Response.json({}), pattern: /media response has no id/ },
+    { name: "空 ID", image: "/a.png", upload: () => Response.json({ id: "" }), pattern: /media response has no id/ },
+  ];
+  for (const testCase of cases) {
+    await t.test(testCase.name, async (subtest) => {
+      const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+      subtest.after(() => rm(directory, { recursive: true, force: true }));
+      const feedPath = join(directory, "index.xml");
+      await writeFile(feedPath, feed([
+        item("failure", "画像", `<img src="${testCase.image}">`),
+        item("valid"),
+      ]));
+      await writeFile(join(directory, "a.png"), "image");
+      await symlink(tmpdir(), join(directory, "outside.png"));
+      const mock = mockHollo();
+      const fetchImpl: typeof fetch = async (input, init) => {
+        const url = String(input);
+        if (url.startsWith("https://images.example/")) {
+          assert.ok(testCase.download);
+          return testCase.download();
+        }
+        if (url.endsWith("/api/v1/media")) {
+          assert.ok(testCase.upload);
+          return testCase.upload();
+        }
+        return mock.fetchImpl(input, init);
+      };
+      const config = options(feedPath, join(directory, "posts.json"), fetchImpl, true);
+      await assert.rejects(publishNewItems(config), (error: Error) => {
+        assert.match(error.message, testCase.pattern);
+        assert.doesNotMatch(error.message, /test-token-never-log|sensitive response/);
+        return true;
+      });
+      const mapping = await loadPostMap(config.mapPath);
+      assert.deepEqual(mapping.seenPaths, ["/posts/valid/"]);
+      assert.equal(mapping.posts["/posts/failure/"], undefined);
+      assert.equal(mock.calls.filter((call) => call.url.endsWith("/api/v1/statuses")).length, 1);
+    });
+  }
+});
+
+test("途中の画像添付や投稿が失敗しても再試行でき、投稿の冪等キーを保つ", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const feedPath = join(directory, "index.xml");
+  await writeFile(feedPath, feed([item("retry-images", "画像", '<img src="/a.png"><img src="/b.png">')]));
+  await writeFile(join(directory, "a.png"), "a");
+  await writeFile(join(directory, "b.png"), "b");
+  const mock = mockHollo();
+  let uploads = 0;
+  const statuses: RequestInit[] = [];
+  const fetchImpl: typeof fetch = async (input, init = {}) => {
+    const url = String(input);
+    if (url.endsWith("/api/v1/media")) {
+      uploads++;
+      return uploads === 2
+        ? new Response("", { status: 503 })
+        : Response.json({ id: `media-${uploads}` });
+    }
+    if (url.endsWith("/api/v1/statuses")) {
+      statuses.push(init);
+      if (statuses.length === 1) return new Response("", { status: 503 });
+    }
+    return mock.fetchImpl(input, init);
+  };
+  const config = options(feedPath, join(directory, "posts.json"), fetchImpl, true);
+
+  await assert.rejects(publishNewItems(config), /Failed to upload image.*HTTP 503/);
+  assert.equal(statuses.length, 0);
+  assert.deepEqual((await loadPostMap(config.mapPath)).seenPaths, []);
+  await assert.rejects(publishNewItems(config), /Failed to post to Hollo.*HTTP 503/);
+  assert.deepEqual((await loadPostMap(config.mapPath)).seenPaths, []);
+  assert.deepEqual(JSON.parse(String(statuses[0].body)).media_ids, ["media-3", "media-4"]);
+
+  assert.deepEqual(await publishNewItems(config), { baselineSkipped: 0, published: 1 });
+  assert.deepEqual(JSON.parse(String(statuses[1].body)).media_ids, ["media-5", "media-6"]);
+  const key = new Headers(statuses[0].headers).get("idempotency-key");
+  assert.match(key ?? "", /^[a-f0-9]{64}$/);
+  assert.equal(new Headers(statuses[1].headers).get("idempotency-key"), key);
+  assert.ok((await loadPostMap(config.mapPath)).posts["/posts/retry-images/"]);
+  assert.deepEqual(await publishNewItems(config), { baselineSkipped: 0, published: 0 });
+  assert.equal(uploads, 6);
+  assert.equal(statuses.length, 2);
 });
 
 test("旧形式の RSS、不正な RSS、HTTP 以外の記事 URL を拒否する", () => {
