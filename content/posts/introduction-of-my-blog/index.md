@@ -124,7 +124,7 @@ https://docs.hollo.social/
 
 Hugo+GoToSocial+GoatCounterの構成とかなり似ていますが、GoToSocialよりFediverse用のURLとブログのURLを同じにするのがより簡単であったこと、リアクションの表示を認証なしにできることからHolloを採用しました。
 
-<!-- 構成図を入れる -->
+![システム構成図](system_overview.png)
 
 それぞれの役割はこのようになっています。
 * Caddy: インターネットからやってきたリクエストをHugo・Hollo・GoatCounterに振り分ける
