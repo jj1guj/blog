@@ -32,6 +32,7 @@ defaultContentLanguage = 'ja'
 [caches.getresource]
   maxAge = '168h'
 [params]
+  defaultTheme = 'dark'
   # 自動判定だと、公開記事がない状態で起動したときにトップの一覧が空のままになる。
   mainSections = ['posts']
   ShowToc = true
