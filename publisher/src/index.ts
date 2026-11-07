@@ -27,6 +27,7 @@ export interface PostMap {
   initialized: boolean;
   seenPaths: string[];
   posts: Record<string, PublishedPost>;
+  pendingPaths?: string[];
 }
 
 export interface PublisherOptions {
@@ -56,7 +57,7 @@ function decodeXml(value: string): string {
         ? Number.parseInt(name.slice(2), 16)
         : Number.parseInt(name.slice(1), 10);
       return Number.isInteger(codePoint) && codePoint >= 0 &&
-          codePoint <= 0x10ffff && !(codePoint >= 0xd800 && codePoint <= 0xdfff)
+        codePoint <= 0x10ffff && !(codePoint >= 0xd800 && codePoint <= 0xdfff)
         ? String.fromCodePoint(codePoint)
         : entity;
     },
@@ -90,7 +91,7 @@ function normalizeBlogUrl(value: string): URL {
     throw new Error("BLOG_URL must be a valid URL");
   }
   if (!["http:", "https:"].includes(url.protocol) ||
-      url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+    url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
     throw new Error("BLOG_URL must contain only a scheme and host");
   }
   return url;
@@ -106,7 +107,7 @@ function forwardedHeaders(blogUrl: string): Record<string, string> {
 
 export function parseRss(xml: string, blogUrl: string): FeedItem[] {
   if (!/<rss\b[^>]*>/i.test(xml) || !/<channel\b[^>]*>/i.test(xml) ||
-      !/<\/channel\s*>/i.test(xml) || !/<\/rss\s*>/i.test(xml)) {
+    !/<\/channel\s*>/i.test(xml) || !/<\/rss\s*>/i.test(xml)) {
     throw new Error("Hugo RSS is not valid RSS 2.0");
   }
   if (getElement(xml, "publisher:full-content") !== "1") {
@@ -179,10 +180,13 @@ function parsePostMap(contents: string): PostMap {
     throw new Error("Failed to parse post map JSON");
   }
   if (!isRecord(value) || value.version !== 1 ||
-      typeof value.initialized !== "boolean" ||
-      !Array.isArray(value.seenPaths) ||
-      !value.seenPaths.every((path) => typeof path === "string" && path.startsWith("/")) ||
-      !isRecord(value.posts)) {
+    typeof value.initialized !== "boolean" ||
+    !Array.isArray(value.seenPaths) ||
+    !value.seenPaths.every((path) => typeof path === "string" && path.startsWith("/")) ||
+    (value.pendingPaths !== undefined &&
+      (!Array.isArray(value.pendingPaths) ||
+        !value.pendingPaths.every((path) => typeof path === "string" && path.startsWith("/")))) ||
+    !isRecord(value.posts)) {
     throw new Error("Post map has an invalid format");
   }
   const posts: Record<string, PublishedPost> = Object.create(null) as Record<
@@ -191,7 +195,7 @@ function parsePostMap(contents: string): PostMap {
   >;
   for (const [path, rawPost] of Object.entries(value.posts)) {
     if (!path.startsWith("/") || !isRecord(rawPost) ||
-        typeof rawPost.id !== "string" || typeof rawPost.url !== "string") {
+      typeof rawPost.id !== "string" || typeof rawPost.url !== "string") {
       throw new Error("Post map contains an invalid entry");
     }
     posts[path] = {
@@ -207,6 +211,9 @@ function parsePostMap(contents: string): PostMap {
     initialized: value.initialized,
     seenPaths: [...new Set([...value.seenPaths, ...Object.keys(posts)])],
     posts,
+    ...(Array.isArray(value.pendingPaths)
+      ? { pendingPaths: [...new Set(value.pendingPaths as string[])] }
+      : {}),
   };
 }
 
@@ -304,7 +311,7 @@ export async function syncRemoteViewPages(
 
 function getStatusResponse(value: unknown): PublishedPost {
   if (!isRecord(value) || typeof value.id !== "string" ||
-      typeof value.url !== "string") {
+    typeof value.url !== "string") {
     throw new Error("Hollo status response has no id or url");
   }
   let url: URL;
@@ -343,10 +350,10 @@ async function getStatusLimits(
     throw new Error("Failed to parse Hollo instance info as JSON");
   }
   if (!isRecord(body) || !isRecord(body.configuration) ||
-      !isRecord(body.configuration.statuses) ||
-      typeof body.configuration.statuses.max_characters !== "number" ||
-      !Number.isSafeInteger(body.configuration.statuses.max_characters) ||
-      body.configuration.statuses.max_characters <= 0) {
+    !isRecord(body.configuration.statuses) ||
+    typeof body.configuration.statuses.max_characters !== "number" ||
+    !Number.isSafeInteger(body.configuration.statuses.max_characters) ||
+    body.configuration.statuses.max_characters <= 0) {
     throw new Error("Hollo character limit is invalid");
   }
   return {
@@ -436,6 +443,8 @@ async function uploadImages(
   return ids;
 }
 
+class RejectedStatusError extends Error { }
+
 async function createStatus(
   item: FeedItem,
   status: string,
@@ -461,7 +470,11 @@ async function createStatus(
     signal: AbortSignal.timeout(60_000),
   });
   if (!response.ok) {
-    throw new Error(`Failed to post to Hollo: HTTP ${response.status}`);
+    const message = `Failed to post to Hollo: HTTP ${response.status}`;
+    if (response.status >= 400 && response.status < 500 && response.status !== 408) {
+      throw new RejectedStatusError(message);
+    }
+    throw new Error(message);
   }
   let responseBody: unknown;
   try {
@@ -508,6 +521,10 @@ export async function publishNewItems(
   const failures: string[] = [];
   for (const item of newItems) {
     if (seenPaths.has(item.path)) continue;
+    if (postMap.pendingPaths?.includes(item.path)) {
+      failures.push(`${item.path}: Posting outcome is unknown; automatic retry is blocked. Check Hollo and reconcile the post map before retrying.`);
+      continue;
+    }
     let post: PublishedPost;
     try {
       const html = item.contentHtml;
@@ -520,7 +537,7 @@ export async function publishNewItems(
       const images = extractArticleImages(html, item.url);
       if (images.length > 0) {
         if (typeof limits.mediaAttachments !== "number" ||
-            !Number.isSafeInteger(limits.mediaAttachments) || limits.mediaAttachments < 0) {
+          !Number.isSafeInteger(limits.mediaAttachments) || limits.mediaAttachments < 0) {
           throw new Error("Hollo media attachment limit is invalid");
         }
         if (images.length > limits.mediaAttachments) {
@@ -528,13 +545,20 @@ export async function publishNewItems(
         }
       }
       const mediaIds = await uploadImages(images, options);
+      postMap.pendingPaths = [...(postMap.pendingPaths ?? []), item.path];
+      await savePostMap(options.mapPath, postMap);
       post = await createStatus(item, status, mediaIds, options);
     } catch (error) {
+      if (error instanceof RejectedStatusError) {
+        postMap.pendingPaths = postMap.pendingPaths?.filter((path) => path !== item.path);
+        await savePostMap(options.mapPath, postMap);
+      }
       failures.push(`${item.path}: ${errorMessage(error)}`);
       continue;
     }
     postMap.seenPaths.push(item.path);
     postMap.posts[item.path] = post;
+    postMap.pendingPaths = postMap.pendingPaths?.filter((path) => path !== item.path);
     await savePostMap(options.mapPath, postMap);
     await syncRemoteViewPages(options.mapPath, options.blogUrl);
     seenPaths.add(item.path);

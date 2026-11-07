@@ -192,10 +192,14 @@ test("添付数上限ちょうどは投稿し、超過や不正な上限はア�
       const fetchImpl: typeof fetch = async (input, init = {}) => {
         const url = String(input);
         if (url.endsWith("/api/v2/instance")) {
-          return Response.json({ configuration: { statuses: {
-            max_characters: 10000,
-            max_media_attachments: limit,
-          } } });
+          return Response.json({
+            configuration: {
+              statuses: {
+                max_characters: 10000,
+                max_media_attachments: limit,
+              }
+            }
+          });
         }
         if (url.endsWith("/api/v1/media")) {
           return Response.json({ id: `media-${++uploaded}` });
@@ -269,7 +273,7 @@ test("画像の取得・アップロード失敗では記事を記録せず、�
   }
 });
 
-test("途中の画像添付や投稿が失敗しても再試行でき、投稿の冪等キーを保つ", async (t) => {
+test("画像添付の失敗や投稿の明確な拒否後は再試行でき、投稿の冪等キーを保つ", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const feedPath = join(directory, "index.xml");
@@ -289,7 +293,7 @@ test("途中の画像添付や投稿が失敗しても再試行でき、投稿�
     }
     if (url.endsWith("/api/v1/statuses")) {
       statuses.push(init);
-      if (statuses.length === 1) return new Response("", { status: 503 });
+      if (statuses.length === 1) return new Response("", { status: 422 });
     }
     return mock.fetchImpl(input, init);
   };
@@ -298,7 +302,7 @@ test("途中の画像添付や投稿が失敗しても再試行でき、投稿�
   await assert.rejects(publishNewItems(config), /Failed to upload image.*HTTP 503/);
   assert.equal(statuses.length, 0);
   assert.deepEqual((await loadPostMap(config.mapPath)).seenPaths, []);
-  await assert.rejects(publishNewItems(config), /Failed to post to Hollo.*HTTP 503/);
+  await assert.rejects(publishNewItems(config), /Failed to post to Hollo.*HTTP 422/);
   assert.deepEqual((await loadPostMap(config.mapPath)).seenPaths, []);
   assert.deepEqual(JSON.parse(String(statuses[0].body)).media_ids, ["media-3", "media-4"]);
 
@@ -593,12 +597,74 @@ test("Hollo が失敗した記事を対応表へ記録せず、エラーにト�
   assert.equal(Object.keys(mapping.posts).length, 0);
 });
 
+test("投稿結果が不明な場合は、対応表の再読込後も自動再送しない", async (t) => {
+  for (const outcome of ["timeout", "HTTP 503", "invalid JSON"]) {
+    await t.test(outcome, async (subtest) => {
+      const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+      subtest.after(() => rm(directory, { recursive: true, force: true }));
+      const feedPath = join(directory, "index.xml");
+      const mapPath = join(directory, "posts.json");
+      await writeFile(feedPath, feed([item("uncertain"), item("other")]));
+      const mock = mockHollo();
+      let attempts = 0;
+      const fetchImpl: typeof fetch = async (input, init) => {
+        if (String(input).endsWith("/api/v1/statuses") &&
+          JSON.parse(String(init?.body)).status.includes("/posts/uncertain/")) {
+          attempts++;
+          assert.deepEqual((await loadPostMap(mapPath)).pendingPaths, ["/posts/uncertain/"]);
+          if (outcome === "timeout") throw new DOMException("Timed out", "TimeoutError");
+          return outcome === "HTTP 503"
+            ? new Response("", { status: 503 })
+            : new Response("{", { status: 200 });
+        }
+        return mock.fetchImpl(input, init);
+      };
+      const config = options(feedPath, mapPath, fetchImpl, true);
+      await assert.rejects(publishNewItems(config));
+      const mapping = await loadPostMap(mapPath);
+      assert.deepEqual(mapping.pendingPaths, ["/posts/uncertain/"]);
+      assert.ok(mapping.posts["/posts/other/"]);
+      assert.equal(mapping.posts["/posts/uncertain/"], undefined);
+      await assert.rejects(publishNewItems({ ...config }), /automatic retry is blocked/);
+      assert.equal(attempts, 1);
+    });
+  }
+});
+
+test("Hollo が投稿を明確に拒否した場合は修正後に再試行できる", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const feedPath = join(directory, "index.xml");
+  const mapPath = join(directory, "posts.json");
+  await writeFile(feedPath, feed([item("rejected")]));
+  const mock = mockHollo();
+  const fetchImpl: typeof fetch = async (input, init) =>
+    String(input).endsWith("/api/v1/statuses")
+      ? new Response("", { status: 422 })
+      : mock.fetchImpl(input, init);
+  await assert.rejects(publishNewItems(options(feedPath, mapPath, fetchImpl, true)), /HTTP 422/);
+  assert.deepEqual((await loadPostMap(mapPath)).pendingPaths, []);
+  await publishNewItems(options(feedPath, mapPath, mock.fetchImpl, true));
+  assert.ok((await loadPostMap(mapPath)).posts["/posts/rejected/"]);
+  assert.deepEqual((await loadPostMap(mapPath)).pendingPaths, []);
+});
+
 test("投稿対応表が壊れている場合は空の状態へ置き換えない", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const mapPath = join(directory, "posts.json");
   await writeFile(mapPath, "{broken");
   await assert.rejects(loadPostMap(mapPath), /Failed to parse post map JSON/);
+  for (const pendingPaths of ["/posts/uncertain/", [42], ["not-a-path"]]) {
+    await writeFile(mapPath, JSON.stringify({
+      version: 1,
+      initialized: true,
+      seenPaths: [],
+      posts: {},
+      pendingPaths,
+    }));
+    await assert.rejects(loadPostMap(mapPath), /Post map has an invalid format/);
+  }
 });
 
 test("環境変数の真偽値を検証し、トークン未設定を空文字として扱う", () => {
