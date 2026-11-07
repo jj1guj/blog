@@ -458,7 +458,7 @@ async function createStatus(
       language: "ja",
       ...(mediaIds.length > 0 ? { media_ids: mediaIds } : {}),
     }),
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!response.ok) {
     throw new Error(`Failed to post to Hollo: HTTP ${response.status}`);
