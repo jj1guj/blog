@@ -37,7 +37,7 @@ tags = ['IoT', 'プログラミング', 'ESP32']
 
 コードは以下の通り
 
-```ino
+```cpp
 #include <Wire.h>
 #include <Adafruit_BME280.h>
 
