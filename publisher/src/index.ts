@@ -3,7 +3,13 @@ import { readFile, mkdir, realpath, rename, rm, writeFile } from "node:fs/promis
 import { basename, dirname, extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createArticleStatus, extractArticleImages, type ArticleImage } from "./markdown.ts";
+import {
+  createArticleMarkdown,
+  createArticleStatus,
+  extractArticleImages,
+  type ArticleImage,
+} from "./markdown.ts";
+import { splitArticleStatus, type StatusPart } from "./split.ts";
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -16,10 +22,18 @@ export interface FeedItem {
   tags?: string[];
 }
 
-export interface PublishedPost {
+export interface PublishedStatus {
   id: string;
   url: string;
   publishedAt?: string;
+}
+
+export interface PublishedPost extends PublishedStatus {
+  replies?: PublishedStatus[];
+}
+
+export interface ThreadProgress {
+  parts: StatusPart[];
 }
 
 export interface PostMap {
@@ -28,6 +42,7 @@ export interface PostMap {
   seenPaths: string[];
   posts: Record<string, PublishedPost>;
   pendingPaths?: string[];
+  threads?: Record<string, ThreadProgress>;
 }
 
 export interface PublisherOptions {
@@ -172,6 +187,51 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function parsePublishedStatus(value: unknown): PublishedStatus {
+  if (!isRecord(value) || typeof value.id !== "string" || !value.id ||
+    typeof value.url !== "string" || !value.url) {
+    throw new Error("Post map contains an invalid entry");
+  }
+  return {
+    id: value.id,
+    url: value.url,
+    ...(typeof value.publishedAt === "string" ? { publishedAt: value.publishedAt } : {}),
+  };
+}
+
+function parseThreadProgress(value: unknown): ThreadProgress {
+  if (!isRecord(value) || !Array.isArray(value.parts) || value.parts.length === 0) {
+    throw new Error("Post map contains an invalid thread");
+  }
+  const imageUrls = new Set<string>();
+  const parts: StatusPart[] = value.parts.map((part: unknown, index: number) => {
+    if (!isRecord(part) || typeof part.status !== "string" || !Array.isArray(part.images) ||
+      (!part.status.trim() && (index === 0 || part.images.length === 0))) {
+      throw new Error("Post map contains an invalid thread part");
+    }
+    const images: ArticleImage[] = part.images.map((image: unknown) => {
+      if (!isRecord(image) || typeof image.url !== "string" ||
+        typeof image.description !== "string") {
+        throw new Error("Post map contains an invalid thread image");
+      }
+      let url: URL;
+      try {
+        url = new URL(image.url);
+      } catch {
+        throw new Error("Post map contains an invalid thread image URL");
+      }
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password ||
+        url.hash || imageUrls.has(url.href)) {
+        throw new Error("Post map contains an invalid or duplicate thread image URL");
+      }
+      imageUrls.add(url.href);
+      return { url: url.href, description: image.description };
+    });
+    return { status: part.status, images };
+  });
+  return { parts };
+}
+
 function parsePostMap(contents: string): PostMap {
   let value: unknown;
   try {
@@ -195,25 +255,53 @@ function parsePostMap(contents: string): PostMap {
   >;
   for (const [path, rawPost] of Object.entries(value.posts)) {
     if (!path.startsWith("/") || !isRecord(rawPost) ||
-      typeof rawPost.id !== "string" || typeof rawPost.url !== "string") {
+      (rawPost.replies !== undefined && !Array.isArray(rawPost.replies))) {
       throw new Error("Post map contains an invalid entry");
     }
-    posts[path] = {
-      id: rawPost.id,
-      url: rawPost.url,
-      ...(typeof rawPost.publishedAt === "string"
-        ? { publishedAt: rawPost.publishedAt }
-        : {}),
-    };
+    const post = parsePublishedStatus(rawPost);
+    const replies = Array.isArray(rawPost.replies)
+      ? rawPost.replies.map(parsePublishedStatus)
+      : undefined;
+    const ids = [post.id, ...(replies ?? []).map((reply) => reply.id)];
+    if (new Set(ids).size !== ids.length) {
+      throw new Error("Post map contains duplicate thread status IDs");
+    }
+    posts[path] = { ...post, ...(replies ? { replies } : {}) };
+  }
+
+  if (value.threads !== undefined && !isRecord(value.threads)) {
+    throw new Error("Post map contains invalid threads");
+  }
+  const threads: Record<string, ThreadProgress> = Object.create(null) as Record<
+    string,
+    ThreadProgress
+  >;
+  for (const [path, rawThread] of Object.entries(value.threads ?? {})) {
+    if (!path.startsWith("/") || !value.initialized || value.seenPaths.includes(path)) {
+      throw new Error("Post map contains an inconsistent thread");
+    }
+    const thread = parseThreadProgress(rawThread);
+    const post = posts[path];
+    const posted = post ? 1 + (post.replies?.length ?? 0) : 0;
+    if (posted > thread.parts.length ||
+      (posted === thread.parts.length &&
+        Array.isArray(value.pendingPaths) && value.pendingPaths.includes(path))) {
+      throw new Error("Post map contains inconsistent thread progress");
+    }
+    threads[path] = thread;
   }
   return {
     version: 1,
     initialized: value.initialized,
-    seenPaths: [...new Set([...value.seenPaths, ...Object.keys(posts)])],
+    seenPaths: [...new Set([
+      ...value.seenPaths,
+      ...Object.keys(posts).filter((path) => !Object.hasOwn(threads, path)),
+    ])],
     posts,
     ...(Array.isArray(value.pendingPaths)
       ? { pendingPaths: [...new Set(value.pendingPaths as string[])] }
       : {}),
+    ...(value.threads !== undefined ? { threads } : {}),
   };
 }
 
@@ -281,37 +369,39 @@ export async function syncRemoteViewPages(
   const directory = remoteViewDirectory(mapPath);
   let written = 0;
   for (const [path, post] of Object.entries(postMap.posts)) {
-    let statusPath: string;
-    try {
-      statusPath = new URL(post.url).pathname;
-    } catch {
-      continue;
+    for (const status of [post, ...(post.replies ?? [])]) {
+      let statusPath: string;
+      try {
+        statusPath = new URL(status.url).pathname;
+      } catch {
+        continue;
+      }
+      if (!/^\/@[A-Za-z0-9_.-]+\/[A-Za-z0-9_-]+$/.test(statusPath)) continue;
+      const filePath = resolve(directory, `.${statusPath}.html`);
+      const content = createRemoteViewPage(new URL(path, blogUrl).href);
+      try {
+        if (await readFile(filePath, "utf8") === content) continue;
+      } catch (error) {
+        if (!isRecord(error) || error.code !== "ENOENT") throw error;
+      }
+      await mkdir(dirname(filePath), { recursive: true });
+      const temporaryPath = `${filePath}.${process.pid}.tmp`;
+      try {
+        await writeFile(temporaryPath, content, { encoding: "utf8", mode: 0o644 });
+        await rename(temporaryPath, filePath);
+      } catch (error) {
+        await rm(temporaryPath, { force: true });
+        throw error;
+      }
+      written++;
     }
-    if (!/^\/@[A-Za-z0-9_.-]+\/[A-Za-z0-9_-]+$/.test(statusPath)) continue;
-    const filePath = resolve(directory, `.${statusPath}.html`);
-    const content = createRemoteViewPage(new URL(path, blogUrl).href);
-    try {
-      if (await readFile(filePath, "utf8") === content) continue;
-    } catch (error) {
-      if (!isRecord(error) || error.code !== "ENOENT") throw error;
-    }
-    await mkdir(dirname(filePath), { recursive: true });
-    const temporaryPath = `${filePath}.${process.pid}.tmp`;
-    try {
-      await writeFile(temporaryPath, content, { encoding: "utf8", mode: 0o644 });
-      await rename(temporaryPath, filePath);
-    } catch (error) {
-      await rm(temporaryPath, { force: true });
-      throw error;
-    }
-    written++;
   }
   return written;
 }
 
-function getStatusResponse(value: unknown): PublishedPost {
-  if (!isRecord(value) || typeof value.id !== "string" ||
-    typeof value.url !== "string") {
+function getStatusResponse(value: unknown): PublishedStatus {
+  if (!isRecord(value) || typeof value.id !== "string" || !value.id ||
+    typeof value.url !== "string" || !value.url) {
     throw new Error("Hollo status response has no id or url");
   }
   let url: URL;
@@ -446,13 +536,16 @@ async function uploadImages(
 class RejectedStatusError extends Error { }
 
 async function createStatus(
-  item: FeedItem,
+  path: string,
+  index: number,
   status: string,
   mediaIds: string[],
+  inReplyToId: string | undefined,
   options: PublisherOptions,
-): Promise<PublishedPost> {
+): Promise<PublishedStatus> {
   const endpoint = new URL("/api/v1/statuses", options.holloApiUrl);
-  const idempotencyKey = createHash("sha256").update(item.path).digest("hex");
+  const keySource = index === 0 ? path : `${path}\0${index}`;
+  const idempotencyKey = createHash("sha256").update(keySource).digest("hex");
   const response = await (options.fetchImpl ?? fetch)(endpoint, {
     method: "POST",
     headers: {
@@ -462,10 +555,11 @@ async function createStatus(
       "Idempotency-Key": idempotencyKey,
     },
     body: JSON.stringify({
-      status,
+      ...(status ? { status } : {}),
       visibility: "public",
       language: "ja",
       ...(mediaIds.length > 0 ? { media_ids: mediaIds } : {}),
+      ...(inReplyToId ? { in_reply_to_id: inReplyToId } : {}),
     }),
     signal: AbortSignal.timeout(60_000),
   });
@@ -501,7 +595,6 @@ export async function publishNewItems(
   const items = parseRss(xml, options.blogUrl);
   const postMap = await loadPostMap(options.mapPath);
   const seenPaths = new Set(postMap.seenPaths);
-  const newItems = orderedByDate(items).filter((item) => !seenPaths.has(item.path));
 
   if (!postMap.initialized && !options.publishExistingOnFirstRun) {
     postMap.seenPaths = [...new Set([...postMap.seenPaths, ...items.map((item) => item.path)])];
@@ -514,55 +607,137 @@ export async function publishNewItems(
     postMap.initialized = true;
     await savePostMap(options.mapPath, postMap);
   }
+
+  const newItems = orderedByDate(items).filter((item) => !seenPaths.has(item.path));
+  const presentPaths = new Set(newItems.map((item) => item.path));
+  for (const path of Object.keys(postMap.threads ?? {})) {
+    if (!seenPaths.has(path) && !presentPaths.has(path)) {
+      newItems.push({ path, title: "", url: options.blogUrl });
+    }
+  }
   if (newItems.length === 0) return { baselineSkipped: 0, published: 0 };
 
   const limits = await getStatusLimits(options);
   let published = 0;
   const failures: string[] = [];
+  const processedPaths = new Set<string>();
   for (const item of newItems) {
-    if (seenPaths.has(item.path)) continue;
+    if (seenPaths.has(item.path) || processedPaths.has(item.path)) continue;
+    processedPaths.add(item.path);
     if (postMap.pendingPaths?.includes(item.path)) {
       failures.push(`${item.path}: Posting outcome is unknown; automatic retry is blocked. Check Hollo and reconcile the post map before retrying.`);
       continue;
     }
-    let post: PublishedPost;
+
+    let parts: StatusPart[];
+    let completed = postMap.posts[item.path]
+      ? 1 + (postMap.posts[item.path].replies?.length ?? 0)
+      : 0;
     try {
-      const html = item.contentHtml;
-      if (html === undefined) throw new Error("RSS item has no full content");
-      const status = createStatusText(item);
-      const length = Array.from(status).length;
-      if (length > limits.characters) {
-        throw new Error(`Status is ${length} characters (Hollo limit: ${limits.characters})`);
+      const thread = postMap.threads?.[item.path];
+      if (thread) {
+        parts = thread.parts;
+      } else {
+        const html = item.contentHtml;
+        if (html === undefined) throw new Error("RSS item has no full content");
+        const images = extractArticleImages(html, item.url);
+        let mediaLimit = 0;
+        if (images.length > 0) {
+          if (typeof limits.mediaAttachments !== "number" ||
+            !Number.isSafeInteger(limits.mediaAttachments) || limits.mediaAttachments < 0) {
+            throw new Error("Hollo media attachment limit is invalid");
+          }
+          mediaLimit = limits.mediaAttachments;
+        }
+        parts = splitArticleStatus(
+          createArticleMarkdown(item.title, html, item.url, item.tags),
+          images,
+          limits.characters,
+          mediaLimit,
+        );
       }
-      const images = extractArticleImages(html, item.url);
-      if (images.length > 0) {
+
+      const remaining = parts.slice(completed);
+      if (remaining.some((part) => part.images.length > 0)) {
         if (typeof limits.mediaAttachments !== "number" ||
           !Number.isSafeInteger(limits.mediaAttachments) || limits.mediaAttachments < 0) {
           throw new Error("Hollo media attachment limit is invalid");
         }
-        if (images.length > limits.mediaAttachments) {
-          throw new Error(`Article has ${images.length} images (Hollo limit: ${limits.mediaAttachments})`);
+        const mediaLimit = limits.mediaAttachments;
+        if (remaining.some((part) => part.images.length > mediaLimit)) {
+          throw new Error("A saved thread part exceeds the current Hollo media attachment limit");
         }
       }
-      const mediaIds = await uploadImages(images, options);
-      postMap.pendingPaths = [...(postMap.pendingPaths ?? []), item.path];
-      await savePostMap(options.mapPath, postMap);
-      post = await createStatus(item, status, mediaIds, options);
-    } catch (error) {
-      if (error instanceof RejectedStatusError) {
-        postMap.pendingPaths = postMap.pendingPaths?.filter((path) => path !== item.path);
-        await savePostMap(options.mapPath, postMap);
+      if (remaining.some((part) => Array.from(part.status).length > limits.characters)) {
+        throw new Error("A saved thread part exceeds the current Hollo character limit");
       }
+    } catch (error) {
       failures.push(`${item.path}: ${errorMessage(error)}`);
       continue;
     }
-    postMap.seenPaths.push(item.path);
-    postMap.posts[item.path] = post;
-    postMap.pendingPaths = postMap.pendingPaths?.filter((path) => path !== item.path);
-    await savePostMap(options.mapPath, postMap);
-    await syncRemoteViewPages(options.mapPath, options.blogUrl);
-    seenPaths.add(item.path);
-    published++;
+
+    let failed = false;
+    while (completed < parts.length) {
+      const part = parts[completed];
+      let mediaIds: string[];
+      try {
+        mediaIds = await uploadImages(part.images, options);
+      } catch (error) {
+        failures.push(`${item.path}: Part ${completed + 1}/${parts.length}: ${errorMessage(error)}`);
+        failed = true;
+        break;
+      }
+
+      postMap.threads ??= Object.create(null) as Record<string, ThreadProgress>;
+      postMap.threads[item.path] = { parts };
+      postMap.pendingPaths = [...(postMap.pendingPaths ?? []), item.path];
+      await savePostMap(options.mapPath, postMap);
+
+      const root = postMap.posts[item.path];
+      const prior = root?.replies?.at(-1) ?? root;
+      let status: PublishedStatus;
+      try {
+        status = await createStatus(item.path, completed, part.status, mediaIds, prior?.id, options);
+        if (root && [root, ...(root.replies ?? [])].some((previous) => previous.id === status.id)) {
+          throw new Error("Hollo returned an already recorded thread status ID");
+        }
+      } catch (error) {
+        if (error instanceof RejectedStatusError) {
+          postMap.pendingPaths = postMap.pendingPaths.filter((path) => path !== item.path);
+          if (!root) delete postMap.threads[item.path];
+          await savePostMap(options.mapPath, postMap);
+        }
+        failures.push(`${item.path}: Part ${completed + 1}/${parts.length}: ${errorMessage(error)}`);
+        failed = true;
+        break;
+      }
+
+      if (root) {
+        root.replies = [...(root.replies ?? []), status];
+      } else {
+        postMap.posts[item.path] = status;
+      }
+      completed++;
+      postMap.pendingPaths = postMap.pendingPaths.filter((path) => path !== item.path);
+      if (completed === parts.length) {
+        delete postMap.threads[item.path];
+        postMap.seenPaths.push(item.path);
+        seenPaths.add(item.path);
+      }
+      await savePostMap(options.mapPath, postMap);
+      await syncRemoteViewPages(options.mapPath, options.blogUrl);
+    }
+
+    if (!failed) {
+      if (!seenPaths.has(item.path)) {
+        delete postMap.threads?.[item.path];
+        postMap.seenPaths.push(item.path);
+        seenPaths.add(item.path);
+        await savePostMap(options.mapPath, postMap);
+        await syncRemoteViewPages(options.mapPath, options.blogUrl);
+      }
+      published++;
+    }
   }
   if (failures.length > 0) {
     throw new Error(`Failed to publish ${failures.length} post(s):\n${failures.join("\n")}`);

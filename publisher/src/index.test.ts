@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +12,7 @@ import {
   publishNewItems,
   readConfig,
   remoteViewDirectory,
+  savePostMap,
   syncRemoteViewPages,
   type FeedItem,
   type PublisherOptions,
@@ -178,7 +180,7 @@ test("記事バンドルと外部の画像を順にアップロードし、説�
   assert.ok((await loadPostMap(config.mapPath)).posts["/posts/images/"]);
 });
 
-test("添付数上限ちょうどは投稿し、超過や不正な上限はアップロード前に拒否する", async (t) => {
+test("添付数上限に応じて分割し、不正な上限ではアップロード前に拒否する", async (t) => {
   for (const limit of [2, 1, 0, undefined, -1, 1.5]) {
     await t.test(`limit=${limit}`, async (subtest) => {
       const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
@@ -188,7 +190,7 @@ test("添付数上限ちょうどは投稿し、超過や不正な上限はア�
       await writeFile(join(directory, "a.png"), "a");
       await writeFile(join(directory, "b.png"), "b");
       let uploaded = 0;
-      let posted = 0;
+      const posted: Array<{ media_ids: string[]; in_reply_to_id?: string }> = [];
       const fetchImpl: typeof fetch = async (input, init = {}) => {
         const url = String(input);
         if (url.endsWith("/api/v2/instance")) {
@@ -204,19 +206,21 @@ test("添付数上限ちょうどは投稿し、超過や不正な上限はア�
         if (url.endsWith("/api/v1/media")) {
           return Response.json({ id: `media-${++uploaded}` });
         }
-        posted++;
-        assert.deepEqual(JSON.parse(String(init.body)).media_ids, ["media-1", "media-2"]);
-        return Response.json({ id: "status", url: `${blogUrl}/@blog/status` });
+        posted.push(JSON.parse(String(init.body)));
+        const id = `status-${posted.length}`;
+        return Response.json({ id, url: `${blogUrl}/@blog/${id}` });
       };
       const config = options(feedPath, join(directory, "posts.json"), fetchImpl, true);
-      if (limit === 2) {
+      if (limit === 2 || limit === 1) {
         assert.deepEqual(await publishNewItems(config), { baselineSkipped: 0, published: 1 });
         assert.equal(uploaded, 2);
-        assert.equal(posted, 1);
+        assert.deepEqual(posted.map((post) => post.media_ids),
+          limit === 2 ? [["media-1", "media-2"]] : [["media-1"], ["media-2"]]);
+        if (limit === 1) assert.equal(posted[1].in_reply_to_id, "status-1");
       } else {
-        await assert.rejects(publishNewItems(config), /Hollo limit:|attachment limit is invalid/);
+        await assert.rejects(publishNewItems(config), /attachment limit is invalid|does not permit images/);
         assert.equal(uploaded, 0);
-        assert.equal(posted, 0);
+        assert.equal(posted.length, 0);
         assert.deepEqual((await loadPostMap(config.mapPath)).seenPaths, []);
       }
     });
@@ -491,7 +495,7 @@ test("既存記事の初回投稿を許可した場合、重複する RSS 項目
   assert.equal((await loadPostMap(config.mapPath)).initialized, true);
 });
 
-test("公称上限ちょうどは投稿し、1 文字超過は記録せず、他の記事は投稿する", async (t) => {
+test("公称上限ちょうどは1投稿、1文字超過は返信に分けて投稿する", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const feedPath = join(directory, "index.xml");
@@ -509,25 +513,26 @@ test("公称上限ちょうどは投稿し、1 文字超過は記録せず、他
   const mock = mockHollo(limit);
   const config = options(feedPath, mapPath, mock.fetchImpl, true);
 
-  await assert.rejects(publishNewItems(config), /\/posts\/long\/.*10001 characters.*limit: 10000/);
-  let posts = mock.calls.filter((call) => call.url.endsWith("/api/v1/statuses"));
-  assert.equal(posts.length, 2);
+  assert.deepEqual(await publishNewItems(config), { baselineSkipped: 0, published: 3 });
+  const posts = mock.calls.filter((call) => call.url.endsWith("/api/v1/statuses"));
+  assert.equal(posts.length, 4);
   assert.equal(Array.from(JSON.parse(String(posts[0].init.body)).status).length, limit);
-  assert.ok(JSON.parse(String(posts[1].init.body)).status.includes("/posts/other/"));
-  let mapping = await loadPostMap(mapPath);
-  assert.deepEqual(mapping.seenPaths, ["/posts/exact/", "/posts/other/"]);
+  const first = JSON.parse(String(posts[1].init.body));
+  const continuation = JSON.parse(String(posts[2].init.body));
+  assert.equal(Array.from(first.status).length, limit);
+  assert.equal(continuation.status, "😀");
+  assert.equal(continuation.in_reply_to_id, "status-2");
+  assert.equal(first.status + continuation.status, `${longPrefix}${longBody}`);
+  assert.ok(JSON.parse(String(posts[3].init.body)).status.includes("/posts/other/"));
+  const mapping = await loadPostMap(mapPath);
+  assert.deepEqual(mapping.seenPaths, ["/posts/exact/", "/posts/long/", "/posts/other/"]);
   assert.equal(mapping.initialized, true);
-  assert.equal(mapping.posts["/posts/long/"], undefined);
-
-  await writeFile(feedPath, feed([item("exact"), item("long"), item("other")]));
+  assert.deepEqual(mapping.posts["/posts/long/"].replies?.map((reply) => reply.id), ["status-3"]);
   assert.deepEqual(
     await publishNewItems({ ...config, publishExistingOnFirstRun: false }),
-    { baselineSkipped: 0, published: 1 },
+    { baselineSkipped: 0, published: 0 },
   );
-  posts = mock.calls.filter((call) => call.url.endsWith("/api/v1/statuses"));
-  assert.equal(posts.length, 3);
-  mapping = await loadPostMap(mapPath);
-  assert.ok(mapping.posts["/posts/long/"]);
+  assert.equal(mock.calls.filter((call) => call.url.endsWith("/api/v1/statuses")).length, 4);
 });
 
 test("全文が欠けた記事を記録せず、ほかの記事を投稿する", async (t) => {
@@ -667,6 +672,43 @@ test("投稿対応表が壊れている場合は空の状態へ置き換えな�
   }
 });
 
+test("不正なスレッド進捗は読み込み時に拒否して対応表を保持する", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const mapPath = join(directory, "posts.json");
+  const path = "/posts/broken-thread/";
+  const root = { id: "root", url: `${blogUrl}/@blog/root` };
+  const part = { status: "本文", images: [] };
+  const image = { url: "https://images.example/a.png", description: "" };
+  const base = { version: 1, initialized: true, seenPaths: [], posts: {} };
+  const cases = [
+    { ...base, threads: { [path]: { parts: [] } } },
+    { ...base, threads: { [path]: { parts: [{ status: "", images: [] }] } } },
+    { ...base, threads: { [path]: { parts: [{ ...part, images: [{ ...image, url: `${image.url}#x` }] }] } } },
+    { ...base, threads: { [path]: { parts: [{ ...part, images: [image, image] }] } } },
+    { ...base, seenPaths: [path], threads: { [path]: { parts: [part] } } },
+    { ...base, posts: { [path]: { ...root, replies: [root] } } },
+    {
+      ...base,
+      posts: { [path]: { ...root, replies: [{ id: "reply", url: `${blogUrl}/@blog/reply` }] } },
+      threads: { [path]: { parts: [part] } },
+    },
+    {
+      ...base,
+      posts: { [path]: root },
+      pendingPaths: [path],
+      threads: { [path]: { parts: [part] } },
+    },
+  ];
+
+  for (const value of cases) {
+    const contents = JSON.stringify(value);
+    await writeFile(mapPath, contents);
+    await assert.rejects(loadPostMap(mapPath), /Post map contains/);
+    assert.equal(await readFile(mapPath, "utf8"), contents);
+  }
+});
+
 test("環境変数の真偽値を検証し、トークン未設定を空文字として扱う", () => {
   const config = readConfig({
     BLOG_URL: "https://blog.example",
@@ -712,4 +754,451 @@ test("RSS のタグを取得し、本文の末尾にハッシュタグとして�
   const [untagged] = parseRss(feed([item("untagged")]), blogUrl);
   assert.equal(untagged.tags, undefined);
   assert.ok(!createStatusText(untagged).includes("#"));
+});
+
+test("17枚の画像を8枚ずつ返信に添付し、各投稿の進捗と移動先を保存する", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const feedPath = join(directory, "index.xml");
+  const mapPath = join(directory, "posts.json");
+  const path = "/posts/many-images/";
+  const html = Array.from({ length: 17 }, (_, index) =>
+    `<p>画像${index}<img src="/${index}.png" alt="画像${index}"></p>`,
+  ).join("") + '<p><img src="/0.png#center" alt="重複"></p>';
+  await writeFile(feedPath, feed([item("many-images", "画像", html)]));
+  await Promise.all(Array.from({ length: 17 }, (_, index) =>
+    writeFile(join(directory, `${index}.png`), `image-${index}`),
+  ));
+  const uploaded: string[] = [];
+  const statuses: Array<{ body: Record<string, unknown>; key: string | null }> = [];
+  const fetchImpl: typeof fetch = async (input, init = {}) => {
+    const url = String(input);
+    if (url.endsWith("/api/v2/instance")) {
+      return Response.json({ configuration: { statuses: { max_characters: 10000, max_media_attachments: 8 } } });
+    }
+    if (url.endsWith("/api/v1/media")) {
+      assert.ok(init.body instanceof FormData);
+      uploaded.push(String(init.body.get("description")));
+      return Response.json({ id: `media-${uploaded.length}` });
+    }
+    const map = await loadPostMap(mapPath);
+    assert.deepEqual(map.pendingPaths, [path]);
+    assert.equal(map.threads?.[path].parts.length, 3);
+    assert.equal(map.posts[path] ? 1 + (map.posts[path].replies?.length ?? 0) : 0, statuses.length);
+    statuses.push({
+      body: JSON.parse(String(init.body)),
+      key: new Headers(init.headers).get("idempotency-key"),
+    });
+    const id = `status-${statuses.length}`;
+    return Response.json({ id, url: `${blogUrl}/@blog/${id}` });
+  };
+  const config = options(feedPath, mapPath, fetchImpl, true);
+
+  assert.deepEqual(await publishNewItems(config), { baselineSkipped: 0, published: 1 });
+  assert.deepEqual(uploaded, Array.from({ length: 17 }, (_, index) => `画像${index}`));
+  assert.deepEqual(statuses.map(({ body }) => body.media_ids), [
+    Array.from({ length: 8 }, (_, index) => `media-${index + 1}`),
+    Array.from({ length: 8 }, (_, index) => `media-${index + 9}`),
+    ["media-17"],
+  ]);
+  assert.equal(statuses[0].body.in_reply_to_id, undefined);
+  assert.equal(statuses[1].body.in_reply_to_id, "status-1");
+  assert.equal(statuses[2].body.in_reply_to_id, "status-2");
+  assert.equal(statuses[0].key, createHash("sha256").update(path).digest("hex"));
+  assert.equal(new Set(statuses.map(({ key }) => key)).size, 3);
+  for (const [index, status] of statuses.entries()) {
+    assert.ok(String(status.body.status).includes(`/${index * 8}.png`));
+    assert.ok(Array.from(String(status.body.status)).length <= 10000);
+    const page = await readFile(
+      join(remoteViewDirectory(mapPath), "@blog", `status-${index + 1}.html`),
+      "utf8",
+    );
+    assert.ok(page.includes(`${blogUrl}${path}`));
+  }
+  const mapping = await loadPostMap(mapPath);
+  assert.deepEqual(mapping.posts[path].replies?.map((reply) => reply.id), ["status-2", "status-3"]);
+  assert.deepEqual(mapping.pendingPaths, []);
+  assert.equal(mapping.threads?.[path], undefined);
+  assert.deepEqual(mapping.seenPaths, [path]);
+  assert.deepEqual(await publishNewItems(config), { baselineSkipped: 0, published: 0 });
+  assert.equal(uploaded.length, 17);
+  assert.equal(statuses.length, 3);
+});
+
+test("切れないリンク内の余分な画像は本文なしの返信として添付する", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const feedPath = join(directory, "index.xml");
+  const html = `<a href="/reference">${Array.from({ length: 3 }, (_, index) =>
+    `<img src="/${index}.png" alt="${index}">`,
+  ).join("")}</a>`;
+  await writeFile(feedPath, feed([item("linked-images", "画像", html)]));
+  await Promise.all(Array.from({ length: 3 }, (_, index) =>
+    writeFile(join(directory, `${index}.png`), "image"),
+  ));
+  let uploaded = 0;
+  const statuses: Array<Record<string, unknown>> = [];
+  const fetchImpl: typeof fetch = async (input, init = {}) => {
+    const url = String(input);
+    if (url.endsWith("/api/v2/instance")) {
+      return Response.json({ configuration: { statuses: { max_characters: 10000, max_media_attachments: 2 } } });
+    }
+    if (url.endsWith("/api/v1/media")) return Response.json({ id: `media-${++uploaded}` });
+    statuses.push(JSON.parse(String(init.body)));
+    const id = `status-${statuses.length}`;
+    return Response.json({ id, url: `${blogUrl}/@blog/${id}` });
+  };
+
+  assert.deepEqual(
+    await publishNewItems(options(feedPath, join(directory, "posts.json"), fetchImpl, true)),
+    { baselineSkipped: 0, published: 1 },
+  );
+  assert.deepEqual(statuses.map((status) => (status.media_ids as string[] | undefined)?.length ?? 0), [0, 2, 1]);
+  assert.ok(String(statuses[1].status).includes("/reference"));
+  assert.equal(Object.hasOwn(statuses[2], "status"), false);
+  assert.equal(statuses[2].in_reply_to_id, "status-2");
+});
+
+test("後続画像のアップロード失敗後は、成功済みの投稿や画像を再送しない", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const feedPath = join(directory, "index.xml");
+  const path = "/posts/image-retry/";
+  const html = Array.from({ length: 9 }, (_, index) =>
+    `<p><img src="/${index}.png" alt="${index}"></p>`,
+  ).join("");
+  await writeFile(feedPath, feed([item("image-retry", "画像", html)]));
+  await Promise.all(Array.from({ length: 9 }, (_, index) =>
+    writeFile(join(directory, `${index}.png`), "image"),
+  ));
+  const descriptions: string[] = [];
+  const statuses: Array<Record<string, unknown>> = [];
+  const fetchImpl: typeof fetch = async (input, init = {}) => {
+    const url = String(input);
+    if (url.endsWith("/api/v2/instance")) {
+      return Response.json({ configuration: { statuses: { max_characters: 10000, max_media_attachments: 8 } } });
+    }
+    if (url.endsWith("/api/v1/media")) {
+      assert.ok(init.body instanceof FormData);
+      descriptions.push(String(init.body.get("description")));
+      if (descriptions.length === 9) return new Response("", { status: 503 });
+      return Response.json({ id: `media-${descriptions.length}` });
+    }
+    statuses.push(JSON.parse(String(init.body)));
+    const id = `status-${statuses.length}`;
+    return Response.json({ id, url: `${blogUrl}/@blog/${id}` });
+  };
+  const config = options(feedPath, join(directory, "posts.json"), fetchImpl, true);
+
+  await assert.rejects(publishNewItems(config), /Part 2\/2: Failed to upload image.*HTTP 503/);
+  let mapping = await loadPostMap(config.mapPath);
+  assert.equal(mapping.posts[path].id, "status-1");
+  assert.equal(mapping.threads?.[path].parts.length, 2);
+  assert.deepEqual(mapping.pendingPaths, []);
+  assert.deepEqual(mapping.seenPaths, []);
+  assert.deepEqual(await publishNewItems(config), { baselineSkipped: 0, published: 1 });
+  assert.deepEqual(descriptions, ["0", "1", "2", "3", "4", "5", "6", "7", "8", "8"]);
+  assert.equal(statuses.length, 2);
+  assert.equal(statuses[1].in_reply_to_id, "status-1");
+  mapping = await loadPostMap(config.mapPath);
+  assert.equal(mapping.posts[path].replies?.[0].id, "status-2");
+});
+
+test("返信が明確に拒否されたら、RSS から記事が消えても保存済み本文から再開する", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const feedPath = join(directory, "index.xml");
+  const path = "/posts/thread-retry/";
+  await writeFile(feedPath, feed([item("thread-retry", "長い記事", `<p>${"本文".repeat(400)}</p>`), item("other")]));
+  const calls: Array<{ body: Record<string, unknown>; key: string | null }> = [];
+  let successful = 0;
+  const fetchImpl: typeof fetch = async (input, init = {}) => {
+    if (String(input).endsWith("/api/v2/instance")) {
+      return Response.json({ configuration: { statuses: { max_characters: 250, max_media_attachments: 8 } } });
+    }
+    calls.push({ body: JSON.parse(String(init.body)), key: new Headers(init.headers).get("idempotency-key") });
+    if (calls.length === 2) return new Response("", { status: 422 });
+    const id = `status-${++successful}`;
+    return Response.json({ id, url: `${blogUrl}/@blog/${id}` });
+  };
+  const config = options(feedPath, join(directory, "posts.json"), fetchImpl, true);
+
+  await assert.rejects(publishNewItems(config), /Part 2\/.*HTTP 422/);
+  let mapping = await loadPostMap(config.mapPath);
+  assert.equal(mapping.posts[path].id, "status-1");
+  assert.ok(mapping.posts["/posts/other/"]);
+  assert.deepEqual(mapping.pendingPaths, []);
+  assert.deepEqual(mapping.seenPaths, ["/posts/other/"]);
+  const snapshot = mapping.threads?.[path].parts.map((part) => part.status).join("");
+  assert.ok(snapshot?.includes("本文".repeat(400)));
+
+  await writeFile(feedPath, feed([item("other")]));
+  assert.deepEqual(await publishNewItems(config), { baselineSkipped: 0, published: 1 });
+  assert.deepEqual(calls[3].body, calls[1].body);
+  assert.equal(calls[3].key, calls[1].key);
+  assert.equal(calls.filter(({ body }) => String(body.status).includes(`${blogUrl}${path}`)).length, 1);
+  mapping = await loadPostMap(config.mapPath);
+  assert.ok(mapping.posts[path].replies?.length);
+  assert.equal(mapping.threads?.[path], undefined);
+  assert.ok(mapping.seenPaths.includes(path));
+});
+
+test("返信の投稿結果が不明な場合、再起動相当の再読込後も再送しない", async (t) => {
+  for (const outcome of ["timeout", "HTTP 408", "HTTP 503", "invalid JSON", "missing ID", "duplicate ID"]) {
+    await t.test(outcome, async (subtest) => {
+      const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+      subtest.after(() => rm(directory, { recursive: true, force: true }));
+      const feedPath = join(directory, "index.xml");
+      const mapPath = join(directory, "posts.json");
+      const path = "/posts/uncertain-thread/";
+      await writeFile(feedPath, feed([item("uncertain-thread", "記事", `<p>${"文".repeat(700)}</p>`)]));
+      const statuses: Array<Record<string, unknown>> = [];
+      const fetchImpl: typeof fetch = async (input, init = {}) => {
+        if (String(input).endsWith("/api/v2/instance")) {
+          return Response.json({ configuration: { statuses: { max_characters: 200, max_media_attachments: 8 } } });
+        }
+        const mapping = await loadPostMap(mapPath);
+        assert.deepEqual(mapping.pendingPaths, [path]);
+        assert.ok(mapping.threads?.[path]);
+        statuses.push(JSON.parse(String(init.body)));
+        if (statuses.length === 3) {
+          if (outcome === "timeout") throw new DOMException("Timed out", "TimeoutError");
+          if (outcome === "HTTP 408") return new Response("", { status: 408 });
+          if (outcome === "HTTP 503") return new Response("", { status: 503 });
+          if (outcome === "invalid JSON") return new Response("{", { status: 200 });
+          if (outcome === "missing ID") return Response.json({ url: `${blogUrl}/@blog/missing` });
+          return Response.json({ id: "status-2", url: `${blogUrl}/@blog/status-2` });
+        }
+        const id = `status-${statuses.length}`;
+        return Response.json({ id, url: `${blogUrl}/@blog/${id}` });
+      };
+      const config = options(feedPath, mapPath, fetchImpl, true);
+
+      await assert.rejects(publishNewItems(config), /Part 3\//);
+      const mapping = await loadPostMap(mapPath);
+      assert.equal(mapping.posts[path].id, "status-1");
+      assert.deepEqual(mapping.posts[path].replies?.map((reply) => reply.id), ["status-2"]);
+      assert.deepEqual(mapping.pendingPaths, [path]);
+      assert.deepEqual(mapping.seenPaths, []);
+      assert.equal(statuses[1].in_reply_to_id, "status-1");
+      assert.equal(statuses[2].in_reply_to_id, "status-2");
+      await assert.rejects(publishNewItems({ ...config }), /automatic retry is blocked/);
+      assert.equal(statuses.length, 3);
+    });
+  }
+});
+
+test("結果不明の最終返信を手動で照合した後、再送せず完了として記録する", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const feedPath = join(directory, "index.xml");
+  const mapPath = join(directory, "posts.json");
+  const path = "/posts/reconciled/";
+  await writeFile(feedPath, feed([item("reconciled", "記事", `<p>${"文".repeat(130)}</p>`)]));
+  let attempts = 0;
+  const fetchImpl: typeof fetch = async (input) => {
+    if (String(input).endsWith("/api/v2/instance")) {
+      return Response.json({ configuration: { statuses: { max_characters: 100, max_media_attachments: 8 } } });
+    }
+    attempts++;
+    if (attempts === 2) throw new DOMException("Timed out", "TimeoutError");
+    return Response.json({ id: "root", url: `${blogUrl}/@blog/root` });
+  };
+  const config = options(feedPath, mapPath, fetchImpl, true);
+
+  await assert.rejects(publishNewItems(config), /Part 2\/2/);
+  const mapping = await loadPostMap(mapPath);
+  mapping.posts[path].replies = [{ id: "confirmed-reply", url: `${blogUrl}/@blog/confirmed-reply` }];
+  mapping.pendingPaths = [];
+  await savePostMap(mapPath, mapping);
+  assert.deepEqual(await publishNewItems(config), { baselineSkipped: 0, published: 1 });
+  assert.equal(attempts, 2);
+  const finalMap = await loadPostMap(mapPath);
+  assert.deepEqual(finalMap.seenPaths, [path]);
+  assert.equal(finalMap.threads?.[path], undefined);
+  assert.ok((await readFile(join(remoteViewDirectory(mapPath), "@blog", "confirmed-reply.html"), "utf8"))
+    .includes(`${blogUrl}${path}`));
+});
+
+test("結果不明の先頭投稿を手動で照合した後、返信から重複なく再開する", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const feedPath = join(directory, "index.xml");
+  const mapPath = join(directory, "posts.json");
+  const path = "/posts/reconciled-root/";
+  await writeFile(feedPath, feed([item("reconciled-root", "記事", `<p>${"文".repeat(400)}</p>`)]));
+  const statuses: Array<{ body: Record<string, unknown>; key: string | null }> = [];
+  const fetchImpl: typeof fetch = async (input, init = {}) => {
+    if (String(input).endsWith("/api/v2/instance")) {
+      return Response.json({ configuration: { statuses: { max_characters: 200, max_media_attachments: 8 } } });
+    }
+    statuses.push({
+      body: JSON.parse(String(init.body)),
+      key: new Headers(init.headers).get("idempotency-key"),
+    });
+    if (statuses.length === 1) throw new DOMException("Timed out", "TimeoutError");
+    const id = `reply-${statuses.length - 1}`;
+    return Response.json({ id, url: `${blogUrl}/@blog/${id}` });
+  };
+  const config = options(feedPath, mapPath, fetchImpl, true);
+
+  await assert.rejects(publishNewItems(config), /Part 1\//);
+  let mapping = await loadPostMap(mapPath);
+  assert.deepEqual(mapping.pendingPaths, [path]);
+  assert.equal(mapping.posts[path], undefined);
+  mapping.posts[path] = { id: "confirmed-root", url: `${blogUrl}/@blog/confirmed-root` };
+  mapping.pendingPaths = [];
+  await savePostMap(mapPath, mapping);
+
+  assert.deepEqual(await publishNewItems(config), { baselineSkipped: 0, published: 1 });
+  assert.equal(statuses[0].body.in_reply_to_id, undefined);
+  assert.equal(statuses[1].body.in_reply_to_id, "confirmed-root");
+  assert.equal(new Set(statuses.map(({ key }) => key)).size, statuses.length);
+  mapping = await loadPostMap(mapPath);
+  assert.equal(mapping.posts[path].id, "confirmed-root");
+  assert.equal(mapping.posts[path].replies?.length, statuses.length - 1);
+  assert.deepEqual(mapping.seenPaths, [path]);
+  assert.equal(mapping.threads?.[path], undefined);
+  assert.deepEqual(await publishNewItems(config), { baselineSkipped: 0, published: 0 });
+});
+
+test("途中で公称上限が下がった場合、未投稿部分を送らず上限の復旧後に再開する", async (t) => {
+  for (const kind of ["characters", "media"] as const) {
+    await t.test(kind, async (subtest) => {
+      const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+      subtest.after(() => rm(directory, { recursive: true, force: true }));
+      const feedPath = join(directory, "index.xml");
+      const mapPath = join(directory, "posts.json");
+      const path = `/posts/lowered-${kind}/`;
+      const html = kind === "characters"
+        ? `<p>${"文".repeat(500)}</p>`
+        : Array.from({ length: 16 }, (_, index) =>
+          `<p><img src="/${index}.png" alt="${index}"></p>`,
+        ).join("");
+      await writeFile(feedPath, feed([item(`lowered-${kind}`, "記事", html)]));
+      if (kind === "media") {
+        await Promise.all(Array.from({ length: 16 }, (_, index) =>
+          writeFile(join(directory, `${index}.png`), "image"),
+        ));
+      }
+      let characterLimit = kind === "characters" ? 200 : 10000;
+      let mediaLimit = 8;
+      let uploaded = 0;
+      const statuses: Array<{ body: Record<string, unknown>; key: string | null }> = [];
+      const fetchImpl: typeof fetch = async (input, init = {}) => {
+        const url = String(input);
+        if (url.endsWith("/api/v2/instance")) {
+          return Response.json({
+            configuration: { statuses: { max_characters: characterLimit, max_media_attachments: mediaLimit } },
+          });
+        }
+        if (url.endsWith("/api/v1/media")) return Response.json({ id: `media-${++uploaded}` });
+        statuses.push({
+          body: JSON.parse(String(init.body)),
+          key: new Headers(init.headers).get("idempotency-key"),
+        });
+        if (statuses.length === 2) return new Response("", { status: 422 });
+        const id = statuses.length === 1 ? "root" : `reply-${statuses.length}`;
+        return Response.json({ id, url: `${blogUrl}/@blog/${id}` });
+      };
+      const config = options(feedPath, mapPath, fetchImpl, true);
+
+      await assert.rejects(publishNewItems(config), /Part 2\/.*HTTP 422/);
+      assert.equal((await loadPostMap(mapPath)).posts[path].id, "root");
+      const uploadsBeforeLimitChange = uploaded;
+      if (kind === "characters") characterLimit = 50;
+      else mediaLimit = 4;
+      await assert.rejects(
+        publishNewItems(config),
+        kind === "characters" ? /current Hollo character limit/ : /current Hollo media attachment limit/,
+      );
+      assert.equal(statuses.length, 2);
+      assert.equal(uploaded, uploadsBeforeLimitChange);
+
+      characterLimit = kind === "characters" ? 200 : 10000;
+      mediaLimit = 8;
+      assert.deepEqual(await publishNewItems(config), { baselineSkipped: 0, published: 1 });
+      assert.equal(statuses[2].body.in_reply_to_id, "root");
+      assert.equal(statuses[2].key, statuses[1].key);
+      assert.equal(statuses.filter(({ body }) => body.in_reply_to_id === undefined).length, 1);
+      const mapping = await loadPostMap(mapPath);
+      assert.ok(mapping.seenPaths.includes(path));
+      assert.equal(mapping.threads?.[path], undefined);
+    });
+  }
+});
+
+test("長すぎるリンクは最初の画像アップロードや投稿前に拒否し、他の記事は投稿する", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const feedPath = join(directory, "index.xml");
+  const mapPath = join(directory, "posts.json");
+  const link = `https://example.test/${"x".repeat(10000)}`;
+  const html = `<p><img src="/image.png"><a href="${link}">長いリンク</a></p>`;
+  await writeFile(feedPath, feed([item("oversized-link", "記事", html), item("other")]));
+  const mock = mockHollo();
+  let uploads = 0;
+  const fetchImpl: typeof fetch = async (input, init = {}) => {
+    if (String(input).endsWith("/api/v1/media")) {
+      uploads++;
+      return Response.json({ id: "image" });
+    }
+    return mock.fetchImpl(input, init);
+  };
+  const config = options(feedPath, mapPath, fetchImpl, true);
+
+  await assert.rejects(publishNewItems(config), /\/posts\/oversized-link\/.*construct or link exceeds/);
+  assert.equal(uploads, 0);
+  const statuses = mock.calls.filter(({ url }) => url.endsWith("/api/v1/statuses"));
+  assert.equal(statuses.length, 1);
+  assert.ok(String(statuses[0].init.body).includes("/posts/other/"));
+  const mapping = await loadPostMap(mapPath);
+  assert.deepEqual(mapping.seenPaths, ["/posts/other/"]);
+  assert.equal(mapping.posts["/posts/oversized-link/"], undefined);
+  assert.equal(mapping.threads?.["/posts/oversized-link/"], undefined);
+});
+
+test("投稿成功後に対応表の保存に失敗しても、自動再送を停止する", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const feedPath = join(directory, "index.xml");
+  const mapPath = join(directory, "posts.json");
+  const temporaryPath = `${mapPath}.${process.pid}.tmp`;
+  await writeFile(feedPath, feed([item("save-failure")]));
+  let attempts = 0;
+  const fetchImpl: typeof fetch = async (input) => {
+    if (String(input).endsWith("/api/v2/instance")) {
+      return Response.json({ configuration: { statuses: { max_characters: 10000, max_media_attachments: 8 } } });
+    }
+    attempts++;
+    await mkdir(temporaryPath);
+    return Response.json({ id: "created", url: `${blogUrl}/@blog/created` });
+  };
+  const config = options(feedPath, mapPath, fetchImpl, true);
+
+  await assert.rejects(publishNewItems(config));
+  await rm(temporaryPath, { recursive: true, force: true });
+  const mapping = await loadPostMap(mapPath);
+  assert.deepEqual(mapping.pendingPaths, ["/posts/save-failure/"]);
+  assert.equal(mapping.posts["/posts/save-failure/"], undefined);
+  await assert.rejects(publishNewItems(config), /automatic retry is blocked/);
+  assert.equal(attempts, 1);
+});
+
+test("旧形式の結果不明な投稿は分割対応後も自動再送しない", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hollo-publisher-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const feedPath = join(directory, "index.xml");
+  const mapPath = join(directory, "posts.json");
+  await writeFile(feedPath, feed([item("legacy-pending")]));
+  await writeFile(mapPath, JSON.stringify({
+    version: 1,
+    initialized: true,
+    seenPaths: [],
+    posts: {},
+    pendingPaths: ["/posts/legacy-pending/"],
+  }));
+  const mock = mockHollo();
+  await assert.rejects(publishNewItems(options(feedPath, mapPath, mock.fetchImpl, true)), /automatic retry is blocked/);
+  assert.equal(mock.calls.filter((call) => call.url.endsWith("/api/v1/statuses")).length, 0);
 });

@@ -91,7 +91,9 @@ function createBrowser(options = {}) {
     }
     if (url.pathname === "/fediverse/posts.json") {
       return Response.json({
-        posts: options.unpublished ? {} : { [postPath]: { id: "status-1" } },
+        posts: options.unpublished ? {} : { [postPath]: options.post ?? { id: "status-1" } },
+        ...(options.pendingPaths !== undefined ? { pendingPaths: options.pendingPaths } : {}),
+        ...(options.threads !== undefined ? { threads: options.threads } : {}),
       });
     }
     if (url.pathname === statusPath) {
@@ -111,9 +113,13 @@ function createBrowser(options = {}) {
       if (options.contextError) return new Response("", { status: 503 });
       return Response.json({ descendants: options.replies ?? [] });
     }
-    if (url.pathname === `${statusPath}/quotes`) {
+    if (/^\/api\/v1\/statuses\/[^/]+\/quotes$/.test(url.pathname)) {
       if (options.quoteError) return new Response("", { status: 503 });
       if (options.quoteResponse) return options.quoteResponse(url);
+      if (options.quotesByStatus) {
+        const statusId = decodeURIComponent(url.pathname.split("/")[4]);
+        return Response.json(options.quotesByStatus[statusId] ?? []);
+      }
       return Response.json(options.quotes ?? []);
     }
     throw new Error(`Unexpected request: ${url}`);
@@ -242,6 +248,98 @@ test("返信と複数ページの引用を時系列で統合し、重複を除�
   assert.ok(quoteRequests.every(({ url }) => url.origin === origin));
   assert.ok(requests.every(({ init }) => !new Headers(init.headers).has("authorization")));
   assert.deepEqual(errors, []);
+});
+
+test("記事の続きはコメントから除外し、続きへの返信と引用は表示する", async () => {
+  const firstContinuation = comment("status-2", "2026-11-01T10:00:00Z");
+  const secondContinuation = comment("status-3", "2026-11-01T10:02:00Z");
+  const reply = comment("reply-to-continuation", "2026-11-01T10:01:00Z");
+  const ownComment = comment("own-comment", "2026-11-01T10:03:00Z");
+  ownComment.account.acct = "blog@blog.example";
+  const rootQuote = comment("root-quote", "2026-11-01T10:04:00Z");
+  const threadQuote = comment("thread-quote", "2026-11-01T10:05:00Z");
+  const browser = createBrowser({
+    post: { id: "status-1", replies: [{ id: "status-2" }, { id: "status-3" }] },
+    replies: [firstContinuation, reply, secondContinuation, ownComment],
+    quotesByStatus: {
+      "status-1": [rootQuote],
+      "status-2": [threadQuote, reply],
+      "status-3": [threadQuote],
+    },
+  });
+  await waitFor(() => !browser.document.querySelector("[data-comment-count]").hidden);
+
+  assert.equal(browser.document.querySelector('[data-count="comments"]').textContent, "4");
+  assert.deepEqual(
+    Array.from(browser.document.querySelectorAll(".fediverse-reply-content"), (node) => node.textContent),
+    ["reply-to-continuation", "own-comment", "root-quote", "thread-quote"],
+  );
+  const quotePaths = browser.requests.filter(({ url }) => url.pathname.endsWith("/quotes"))
+    .map(({ url }) => url.pathname);
+  assert.deepEqual(quotePaths, [
+    "/api/v1/statuses/status-1/quotes",
+    "/api/v1/statuses/status-2/quotes",
+    "/api/v1/statuses/status-3/quotes",
+  ]);
+  assert.deepEqual(browser.errors, []);
+});
+
+test("途中の返信結果が未確定なら不正確なコメント数を表示しない", async () => {
+  const browser = createBrowser({
+    post: { id: "status-1", replies: [{ id: "status-2" }] },
+    pendingPaths: [postPath],
+    replies: [comment("unconfirmed-continuation", "2026-11-01T10:00:00Z")],
+  });
+  await waitFor(() => browser.errors.length > 0);
+
+  assert.equal(browser.document.querySelector("[data-fediverse-social]").hidden, false);
+  assert.equal(browser.document.querySelector("[data-comment-count]").hidden, true);
+  assert.equal(browser.document.querySelector("[data-replies]").hidden, true);
+  assert.match(String(browser.errors[0][1]), /Thread posting outcome is pending/);
+  assert.ok(browser.requests.every(({ url }) => !url.pathname.endsWith("/context")));
+});
+
+test("投稿中は未記録の続きがコメントに混ざらないようコメント欄を表示しない", async () => {
+  const browser = createBrowser({
+    post: { id: "status-1", replies: [{ id: "status-2" }] },
+    threads: { [postPath]: { parts: [] } },
+    replies: [comment("new-continuation", "2026-11-01T10:00:00Z")],
+  });
+  await waitFor(() => browser.requests.some(({ url }) => url.pathname === statusPath));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(browser.document.querySelector("[data-comment-count]").hidden, true);
+  assert.ok(browser.requests.every(({ url }) => !url.pathname.endsWith("/context")));
+  const mappingRequest = browser.requests.find(({ url }) => url.pathname === "/fediverse/posts.json");
+  assert.equal(mappingRequest.init.cache, "no-store");
+  assert.deepEqual(browser.errors, []);
+});
+
+test("続きの投稿の引用を取得できない場合も不完全なコメント数を表示しない", async () => {
+  const browser = createBrowser({
+    post: { id: "status-1", replies: [{ id: "status-2" }] },
+    quoteResponse(url) {
+      return url.pathname.includes("/status-2/")
+        ? new Response("", { status: 503 })
+        : Response.json([]);
+    },
+  });
+  await waitFor(() => browser.errors.length > 0);
+
+  assert.equal(browser.document.querySelector("[data-fediverse-social]").hidden, false);
+  assert.equal(browser.document.querySelector("[data-comment-count]").hidden, true);
+  assert.equal(browser.errors[0][0], "Failed to load Fediverse comments");
+  assert.match(String(browser.errors[0][1]), /HTTP 503/);
+});
+
+test("続きの投稿 ID が重複している場合はコメント欄を表示しない", async () => {
+  const browser = createBrowser({
+    post: { id: "status-1", replies: [{ id: "status-2" }, { id: "status-2" }] },
+  });
+  await waitFor(() => browser.errors.length > 0);
+
+  assert.equal(browser.document.querySelector("[data-comment-count]").hidden, true);
+  assert.match(String(browser.errors[0][1]), /Duplicate thread status IDs/);
 });
 
 test("返信がなくても引用をコメントとして表示する", async () => {

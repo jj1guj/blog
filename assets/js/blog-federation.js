@@ -29,9 +29,10 @@ function requiredCount(value, name) {
   return value;
 }
 
-async function fetchResponse(url, { allowNotFound = false } = {}) {
+async function fetchResponse(url, { allowNotFound = false, fresh = false } = {}) {
   const response = await fetch(url, {
     headers: { Accept: "application/json" },
+    ...(fresh ? { cache: "no-store" } : {}),
     signal: AbortSignal.timeout(15000),
   });
   if (!response.ok && !(allowNotFound && response.status === 404)) {
@@ -40,8 +41,8 @@ async function fetchResponse(url, { allowNotFound = false } = {}) {
   return response;
 }
 
-async function fetchJson(url) {
-  return (await fetchResponse(url)).json();
+async function fetchJson(url, options) {
+  return (await fetchResponse(url, options)).json();
 }
 
 function getMediaProxyUrl(value, kind) {
@@ -321,19 +322,29 @@ function mergeComments(replies, quotes) {
   );
 }
 
-async function loadComments(statusId) {
+async function loadComments(post) {
+  const replies = post.replies ?? [];
+  if (!Array.isArray(replies) || replies.some((reply) =>
+    !isRecord(reply) || typeof reply.id !== "string" || !reply.id)) {
+    throw new Error("Invalid thread replies in Fediverse post map");
+  }
+  const continuationIds = new Set(replies.map((reply) => reply.id));
+  if (continuationIds.size !== replies.length || continuationIds.has(post.id)) {
+    throw new Error("Duplicate thread status IDs in Fediverse post map");
+  }
   const contextUrl = new URL(
-    `/api/v1/statuses/${encodeURIComponent(statusId)}/context`,
+    `/api/v1/statuses/${encodeURIComponent(post.id)}/context`,
     location.origin,
   );
-  const [context, quotes] = await Promise.all([
+  const [context, ...quotes] = await Promise.all([
     fetchJson(contextUrl),
-    fetchQuotes(statusId),
+    ...[post.id, ...continuationIds].map(fetchQuotes),
   ]);
   if (!isRecord(context) || !Array.isArray(context.descendants)) {
     throw new Error("Invalid Hollo status context response");
   }
-  const comments = mergeComments(context.descendants, quotes);
+  const comments = mergeComments(context.descendants, quotes.flat())
+    .filter((comment) => !continuationIds.has(comment.id));
   const section = commentPanel;
   const list = section.querySelector("[data-reply-list]");
   if (comments.length === 0) {
@@ -399,7 +410,7 @@ async function loadPostMetrics() {
 
   const postPath = socialPanel.dataset.postPath;
   try {
-    const mapping = await fetchJson(new URL("/fediverse/posts.json", location.origin));
+    const mapping = await fetchJson(new URL("/fediverse/posts.json", location.origin), { fresh: true });
     if (!isRecord(mapping) || !isRecord(mapping.posts)) {
       throw new Error("Invalid Fediverse post map");
     }
@@ -419,7 +430,19 @@ async function loadPostMetrics() {
     socialPanel.hidden = false;
 
     try {
-      await loadComments(post.id);
+      if (mapping.pendingPaths !== undefined &&
+        (!Array.isArray(mapping.pendingPaths) ||
+          mapping.pendingPaths.some((path) => typeof path !== "string"))) {
+        throw new Error("Invalid pending paths in Fediverse post map");
+      }
+      if (mapping.pendingPaths?.includes(postPath)) {
+        throw new Error("Thread posting outcome is pending");
+      }
+      if (mapping.threads !== undefined && !isRecord(mapping.threads)) {
+        throw new Error("Invalid threads in Fediverse post map");
+      }
+      if (mapping.threads && Object.hasOwn(mapping.threads, postPath)) return;
+      await loadComments(post);
     } catch (error) {
       console.error("Failed to load Fediverse comments", error);
     }
