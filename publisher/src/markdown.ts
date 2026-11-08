@@ -61,6 +61,16 @@ export interface ArticleImage {
   description: string;
 }
 
+export interface MarkdownRange {
+  start: number;
+  end: number;
+}
+
+export interface ArticleMarkdown {
+  status: string;
+  mathRanges: MarkdownRange[];
+}
+
 export function extractArticleImages(html: string, articleUrl: string): ArticleImage[] {
   const document = createDocument();
   const root = document.createElement("div");
@@ -137,12 +147,12 @@ export function createHashtags(tags: readonly string[]): string {
   return hashtags.join(" ");
 }
 
-export function createArticleStatus(
+export function createArticleMarkdown(
   title: string,
   html: string,
   articleUrl: string,
   tags: readonly string[] = [],
-): string {
+): ArticleMarkdown {
   const document = createDocument();
   const root = document.createElement("div");
   root.innerHTML = html;
@@ -208,6 +218,7 @@ export function createArticleStatus(
   });
 
   let markdown = converter.turndown(root);
+  const mathRanges: MarkdownRange[] = [];
   for (const [key, expression] of expressions) {
     const index = markdown.indexOf(key);
     if (index < 0) throw new Error("Cannot convert math to Markdown");
@@ -216,10 +227,37 @@ export function createArticleStatus(
     // 隣接する $ や数字で Hollo の数式区切りが誤認されないようにする。
     const prefix = !expression.display && before === "$" ? "\u200b" : "";
     const suffix = !expression.display && /[0-9$]/.test(after) ? "\u200b" : "";
-    markdown = markdown.slice(0, index) + prefix + expression.markdown + suffix +
-      markdown.slice(index + key.length);
+    const replacement = prefix + expression.markdown + suffix;
+    const delta = replacement.length - key.length;
+    for (const range of mathRanges) {
+      if (range.start > index) {
+        range.start += delta;
+        range.end += delta;
+      }
+    }
+    mathRanges.push({ start: index, end: index + replacement.length });
+    markdown = markdown.slice(0, index) + replacement + markdown.slice(index + key.length);
   }
-  return [articleUrl, converter.escape(title.trim()), markdown, createHashtags(tags)]
+  const introduction = [articleUrl, converter.escape(title.trim())]
     .filter((part) => part.length > 0)
     .join("\n\n");
+  const offset = introduction.length + (introduction && markdown ? 2 : 0);
+  return {
+    status: [introduction, markdown, createHashtags(tags)]
+      .filter((part) => part.length > 0)
+      .join("\n\n"),
+    mathRanges: mathRanges.map((range) => ({
+      start: range.start + offset,
+      end: range.end + offset,
+    })),
+  };
+}
+
+export function createArticleStatus(
+  title: string,
+  html: string,
+  articleUrl: string,
+  tags: readonly string[] = [],
+): string {
+  return createArticleMarkdown(title, html, articleUrl, tags).status;
 }
