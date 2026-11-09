@@ -2,7 +2,7 @@
 date = '2026-12-03T13:19:50Z'
 draft = true
 title = '2026年のjiskey'
-tags = ['Misskey', '自宅サーバー']
+tags = ['Misskey', '自宅サーバー', 'Fediverse', 'アドカレ']
 summary = '2026年のjiskeyを振り返りと来年の展望'
 +++
 
