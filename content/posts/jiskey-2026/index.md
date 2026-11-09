@@ -1,5 +1,5 @@
 +++
-date = '2026-11-03T13:19:50Z'
+date = '2026-12-03T13:19:50Z'
 draft = true
 title = '2026年のjiskey'
 tags = ['Misskey', '自宅サーバー']
