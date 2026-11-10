@@ -8,6 +8,7 @@
   margin-inline: auto;
 }
 
-.post-content .table-caption {
+.post-content p.table-caption {
   text-align: center;
+  margin-bottom: 0.5rem;
 }
