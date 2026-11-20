@@ -38,3 +38,11 @@ defaultContentLanguage = 'ja'
   ShowToc = true
   TocOpen = true
   ShowPostNavLinks = true
+# 関連記事はタグだけで判定する。既定では日付も使われ、タグが共通しない記事まで出る。
+[related]
+  includeNewer = true
+  threshold = 80
+  toLower = true
+  [[related.indices]]
+    name = 'tags'
+    weight = 100
