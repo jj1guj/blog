@@ -1,0 +1,15 @@
+{{- $pages := where site.RegularPages "Type" "in" site.Params.mainSections }}
+{{- $related := $pages.Related . | first 5 }}
+{{- with $related }}
+<section class="related-posts">
+  <h2>関連記事</h2>
+  <ul>
+    {{- range . }}
+    <li>
+      <a href="{{ .Permalink }}">{{ .LinkTitle }}</a>
+      <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "2006-01-02" }}</time>
+    </li>
+    {{- end }}
+  </ul>
+</section>
+{{- end }}
