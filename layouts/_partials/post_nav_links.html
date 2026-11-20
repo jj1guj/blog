@@ -1,0 +1,21 @@
+{{- /* 「次の記事」は新しい記事、「前の記事」は古い記事を指す。一覧と同じく新しい記事を左に置く。 */ -}}
+{{- /* クラス名はテーマの CSS に合わせて位置を表す（prev が左、next が右）。 */ -}}
+{{- $pages := where site.RegularPages "Type" "in" site.Params.mainSections }}
+{{- if and (gt (len $pages) 1) (in $pages . ) }}
+<div class="post-nav-section">
+<nav class="paginav">
+  {{- with $pages.Next . }}
+  <a class="prev" href="{{ .Permalink }}">
+    <span class="title">« 次の記事</span>
+    <span>{{- .LinkTitle -}}</span>
+  </a>
+  {{- end }}
+  {{- with $pages.Prev . }}
+  <a class="next" href="{{ .Permalink }}">
+    <span class="title">前の記事 »</span>
+    <span>{{- .LinkTitle -}}</span>
+  </a>
+  {{- end }}
+</nav>
+</div>
+{{- end }}
