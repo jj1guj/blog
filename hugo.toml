@@ -37,3 +37,4 @@ defaultContentLanguage = 'ja'
   mainSections = ['posts']
   ShowToc = true
   TocOpen = true
+  ShowPostNavLinks = true

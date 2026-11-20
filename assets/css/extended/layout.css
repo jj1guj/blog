@@ -12,3 +12,10 @@
   text-align: center;
   margin-bottom: 0.5rem;
 }
+
+/* 前後の記事へのリンクをタグと仕切り線で分ける。 */
+.post-nav-section {
+  margin-top: var(--content-gap);
+  padding-top: var(--content-gap);
+  border-top: 1px solid var(--border);
+}
