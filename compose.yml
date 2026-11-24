@@ -64,7 +64,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:latest
+    image: postgres:18
     pull_policy: always
     environment:
       POSTGRES_DB: hollo
