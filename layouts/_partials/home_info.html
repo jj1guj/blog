@@ -1,0 +1,26 @@
+{{- /*
+  PaperMod の home_info.html を上書きする。
+  Title を指定しないときは見出しを出さず、自己紹介の本文だけを表示する。
+  ヘッダーのブログ名と同じ見出しが重ならないようにするため。
+  その場合もトップページに h1 が残るよう、ブログ名を画面には出さない h1 として置く。
+*/ -}}
+{{- with site.Params.homeInfoParams }}
+<article class="first-entry home-info{{ if not .Title }} home-info-untitled{{ end }}">
+    {{- with .Title }}
+    <header class="entry-header">
+        <h1>{{ . | markdownify }}</h1>
+    </header>
+    {{- else }}
+    <h1 class="visually-hidden">{{ site.Title }}</h1>
+    {{- end }}
+    <div class="entry-content md-content">
+        {{ $opts := dict "display" "block" }}
+        {{ .Content | $.Page.RenderString $opts }}
+    </div>
+    {{- with site.Params.socialIcons }}
+    <footer class="entry-footer">
+        {{ partial "social_icons.html" (dict "align" site.Params.homeInfoParams.AlignSocialIconsTo) }}
+    </footer>
+    {{- end }}
+</article>
+{{- end -}}
