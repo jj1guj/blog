@@ -50,3 +50,13 @@
   font-size: 0.85rem;
   color: var(--secondary);
 }
+
+/* ヘッダーの GitHub アイコンを、テーマ切り替えボタンと同じ大きさにそろえる。 */
+.repo-link {
+  padding: 0 0.4rem;
+}
+
+.repo-link svg {
+  width: 17px;
+  height: 17px;
+}
