@@ -11,6 +11,9 @@ defaultContentLanguage = 'ja'
   tags = '/topics/'
 [permalinks.term]
   tags = '/topics/:slug/'
+# 検索ページ用に、全記事のタイトルと本文をまとめた index.json もトップに出力する。
+[outputs]
+  home = ['HTML', 'RSS', 'JSON']
 [markup]
   [markup.goldmark]
     [markup.goldmark.parser]

@@ -1,4 +1,4 @@
-{{- /* トップの記事一覧の上に置く、タグ一覧とアーカイブへのリンク。 */ -}}
+{{- /* トップの記事一覧の上に置く、タグ一覧・アーカイブ・検索へのリンク。 */ -}}
 <nav class="home-explore" aria-label="記事を探す">
   {{- with site.GetPage "/tags" }}
   <a href="{{ .RelPermalink }}">
@@ -10,6 +10,12 @@
   <a href="{{ .RelPermalink }}">
     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/></svg>
     アーカイブ
+  </a>
+  {{- end }}
+  {{- with site.GetPage "/search" }}
+  <a href="{{ .RelPermalink }}">
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    検索
   </a>
   {{- end }}
 </nav>
