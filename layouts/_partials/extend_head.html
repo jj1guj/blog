@@ -7,3 +7,31 @@
   data-goatcounter="/gc/count"
   async
   src="/gc/count.js"></script>
+{{- /*
+  記事やサイトに OGP 画像の指定がないときの代わりの og:image。
+  記事では本文の最初の画像を、それ以外のページや画像のない記事ではサイトのアイコンを使う。
+  twitter:image は出さないので、X は PaperMod の指定どおり小さいカード（summary）になり、
+  og:image を左側の正方形の枠に表示する。
+*/}}
+{{- if not (or .Params.cover.image (partial "templates/_funcs/get-page-images" .)) }}
+  {{- $image := "" }}
+  {{- if .IsPage }}
+    {{- with findRESubmatch `<img[^>]*\ssrc="([^"]+)"` .Content 1 }}
+      {{- /* 位置指定の #center などは画像の URL に要らないので外す。 */}}
+      {{- $src := index . 0 1 | htmlUnescape | replaceRE `#.*$` "" }}
+      {{- if (urls.Parse $src).IsAbs }}
+        {{- $image = $src }}
+      {{- else if strings.HasPrefix $src "/" }}
+        {{- $image = $src | absURL }}
+      {{- else }}
+        {{- $image = path.Join $.RelPermalink $src | absURL }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- if and (not $image) site.Params.ogImageFallback }}
+    {{- $image = site.Params.ogImageFallback | absURL }}
+  {{- end }}
+  {{- with $image }}
+<meta property="og:image" content="{{ . }}">
+  {{- end }}
+{{- end }}

@@ -38,6 +38,8 @@ defaultContentLanguage = 'ja'
   ShowToc = true
   TocOpen = true
   ShowPostNavLinks = true
+  # OGP 画像の指定も本文の画像もないページで使う og:image。
+  ogImageFallback = 'apple-touch-icon.png'
   # ヘッダーの GitHub アイコンのリンク先。
   repositoryURL = 'https://github.com/jj1guj/blog'
 # 関連記事はタグだけで判定する。既定では日付も使われ、タグが共通しない記事まで出る。
