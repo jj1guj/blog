@@ -3,8 +3,8 @@ locale = 'ja-jp'
 title = 'JJ1GUJのブログ'
 theme = 'PaperMod'
 defaultContentLanguage = 'ja'
+# 記事の分類はタグだけを使う。カテゴリーは使わないので定義しない。
 [taxonomies]
-  category = 'categories'
   tag = 'tags'
 # Hollo の /tags/ と重ならないよう、タグのページは /topics/ に出力する。
 [permalinks.taxonomy]
