@@ -98,3 +98,113 @@ body {
   height: 1rem;
   flex: none;
 }
+
+/* 記事の共有ボタン。ヘッダーのアイコンに合わせて、丸い枠のアイコンだけを並べる。
+   PaperMod 自体の .share-buttons とぶつからないよう、別のクラス名にしている。 */
+.post-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: var(--content-gap);
+}
+
+.share-label,
+.share-status {
+  font-size: 0.85rem;
+  color: var(--secondary);
+}
+
+.share-label {
+  margin-inline-end: 0.2rem;
+}
+
+.post-share > a,
+.post-share > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--entry);
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.post-share > a:hover,
+.post-share > button:hover,
+.post-share > button[aria-expanded="true"] {
+  border-color: var(--secondary);
+}
+
+.post-share > a svg,
+.post-share > button svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.post-share [hidden] {
+  display: none;
+}
+
+.share-change {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+/* Mastodon・Misskey のサーバー名の入力欄。ボタンの下の行に出す。 */
+.share-instance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  flex-basis: 100%;
+  font-size: 0.85rem;
+}
+
+.share-instance label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--secondary);
+}
+
+.share-instance input {
+  width: 14rem;
+  max-width: 100%;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--entry);
+  color: var(--primary);
+}
+
+.share-instance button {
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--entry);
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.share-instance button[type="submit"] {
+  background: var(--primary);
+  color: var(--theme);
+}
+
+.share-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: #e5484d;
+}

@@ -243,5 +243,9 @@ document.querySelectorAll(".post-content pre > code").forEach((codeBlock) => {
   container.append(button);
 });
 </script>
+  {{- if and .IsPage (eq .Section "posts") }}
+  {{- $shareScript := resources.Get "js/share-buttons.js" | minify | fingerprint }}
+  <script src="{{ $shareScript.RelPermalink }}" integrity="{{ $shareScript.Data.Integrity }}" defer></script>
+  {{- end }}
   {{- $federationScript := resources.Get "js/blog-federation.js" | minify | fingerprint }}
   <script src="{{ $federationScript.RelPermalink }}" integrity="{{ $federationScript.Data.Integrity }}" defer></script>

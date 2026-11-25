@@ -44,6 +44,10 @@
   {{- end }}
 
   <footer class="post-footer">
+    {{- /* 本文を読み終えたところで共有できるよう、タグの上に共有ボタンを置く。 */}}
+    {{- if eq .Section "posts" }}
+    {{- partial "share_buttons.html" . }}
+    {{- end }}
     {{- $tags := .Language.Params.Taxonomies.tag | default "tags" }}
     <ul class="post-tags">
       {{- range ($.GetTerms $tags) }}
