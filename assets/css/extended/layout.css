@@ -51,12 +51,12 @@
   color: var(--secondary);
 }
 
-/* ヘッダーの GitHub アイコンを、テーマ切り替えボタンと同じ大きさにそろえる。 */
-.repo-link {
+/* ヘッダーの GitHub・RSS アイコンを、テーマ切り替えボタンと同じ大きさにそろえる。 */
+.header-icon-link {
   padding: 0 0.4rem;
 }
 
-.repo-link svg {
+.header-icon-link svg {
   width: 17px;
   height: 17px;
 }

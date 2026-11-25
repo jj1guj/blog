@@ -56,9 +56,15 @@
                 {{- end }}
                 {{- /* テーマ切り替えの隣に、このブログのリポジトリへのリンクを置く。 */}}
                 {{- with site.Params.repositoryURL }}
-                <a class="repo-link" href="{{ . }}" target="_blank" rel="noopener noreferrer"
+                <a class="header-icon-link" href="{{ . }}" target="_blank" rel="noopener noreferrer"
                     title="GitHub リポジトリ" aria-label="GitHub リポジトリ">
                     {{- partial "svg.html" (dict "name" "github") -}}
+                </a>
+                {{- end }}
+                {{- /* ブログの購読方法として、RSS へのリンクも並べる。 */}}
+                {{- with site.Home.OutputFormats.Get "rss" }}
+                <a class="header-icon-link" href="{{ .Permalink }}" title="RSS" aria-label="RSS">
+                    {{- partial "svg.html" (dict "name" "rss") -}}
                 </a>
                 {{- end }}
                 
