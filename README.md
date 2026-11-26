@@ -35,3 +35,7 @@ flowchart LR
     publisher -->|"投稿 API"| hollo
     publisher --> postmap --> caddy
 ```
+
+## ライセンス
+
+[MIT License](LICENSE) です。ただし `static/` 以下の favicon 類は対象外です。`layouts/` の一部は [hugo-PaperMod](https://github.com/adityatelange/hugo-PaperMod)（MIT License）をもとにしています。詳しくは [LICENSE](LICENSE) を参照してください。

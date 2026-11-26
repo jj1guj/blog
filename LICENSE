@@ -1,0 +1,47 @@
+MIT License
+
+Copyright (c) 2026 jj1guj
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+
+Exceptions
+
+The following files are NOT covered by the MIT License above.
+All rights reserved:
+
+  static/apple-touch-icon.png
+  static/favicon-16x16.png
+  static/favicon-32x32.png
+  static/favicon.ico
+
+--------------------------------------------------------------------------------
+
+Third-party code
+
+Portions of the files under layouts/ are derived from hugo-PaperMod
+(https://github.com/adityatelange/hugo-PaperMod), licensed under the
+MIT License:
+
+  Copyright (c) 2020 nanxiaobei and adityatelange
+  Copyright (c) 2021-2026 adityatelange
+
+The theme itself is included as a git submodule under themes/PaperMod and
+remains under its own license (themes/PaperMod/LICENSE).
