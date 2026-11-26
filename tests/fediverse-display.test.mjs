@@ -43,9 +43,15 @@ function comment(id, createdAt, content = `<p>${id}</p>`) {
   };
 }
 
+// ヘッダーのテンプレートが書き出す Fediverse アカウントへのリンク。
+function profileLinkHtml(options) {
+  if (!options.profileLink) return "";
+  return `<li><a class="fediverse-profile" href="${origin}/@blog?view=fediverse">@blog@blog.example</a></li>`;
+}
+
 function createBrowser(options = {}) {
   const window = domino.createWindow(
-    `<html><head></head><body><nav><ul id="menu"></ul></nav>${template}</body></html>`,
+    `<html><head></head><body><nav><ul id="menu">${profileLinkHtml(options)}</ul></nav>${template}</body></html>`,
   );
   const { document, Element, Node } = window;
   if (options.canonicalUrl) {
@@ -84,6 +90,7 @@ function createBrowser(options = {}) {
     const url = new URL(String(input));
     requests.push({ url, init });
     if (url.pathname === "/api/v1/accounts/lookup") {
+      if (options.accountError) return new Response("", { status: 503 });
       return Response.json({ followers_count: 7 });
     }
     if (url.pathname.startsWith("/gc/counter/")) {
@@ -574,3 +581,25 @@ for (const [name, pageUrl, canonicalUrl, expectedPath] of [
     assert.deepEqual(browser.errors, []);
   });
 }
+
+test("ヘッダーに書かれたFediverseアカウントのリンクにフォロワー数を足す", async () => {
+  const browser = createBrowser({ profileLink: true, unpublished: true });
+  await waitFor(() => browser.document.querySelector(".fediverse-profile-count"));
+
+  const profiles = browser.document.querySelectorAll(".fediverse-profile");
+  assert.equal(profiles.length, 1);
+  assert.equal(profiles[0].getAttribute("href"), `${origin}/@blog?view=fediverse`);
+  assert.equal(profiles[0].textContent, "@blog@blog.example · フォロワー 7");
+  assert.deepEqual(browser.errors, []);
+});
+
+test("フォロワー数を取得できなくてもFediverseアカウントのリンクは残す", async () => {
+  const browser = createBrowser({ profileLink: true, unpublished: true, accountError: true });
+  await waitFor(() => browser.errors.length > 0);
+
+  const profiles = browser.document.querySelectorAll(".fediverse-profile");
+  assert.equal(profiles.length, 1);
+  assert.equal(profiles[0].textContent, "@blog@blog.example");
+  assert.ok(!browser.document.querySelector(".fediverse-profile-count"));
+  assert.equal(browser.errors[0][0], "Failed to load Fediverse follower count");
+});

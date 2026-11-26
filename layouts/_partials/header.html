@@ -118,6 +118,14 @@
                 </a>
             </li>
             {{- end }}
+            {{- /*
+              Fediverse のアカウントへのリンク。フォロワー数を取得できなくても入り口が残るよう HTML に書き、
+              フォロワー数だけを blog-federation.js が後ろに足す。
+              Caddy は ?view=fediverse がないプロフィールへのアクセスをトップへ戻すため、印を付ける。
+            */}}
+            <li>
+                <a class="fediverse-profile" href="{{ "@blog" | absURL }}?view=fediverse">@blog@{{ (urls.Parse site.BaseURL).Host }}</a>
+            </li>
         </ul>
     </nav>
 </header>

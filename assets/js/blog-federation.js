@@ -111,22 +111,28 @@ function holloPageUrl(url) {
   return page;
 }
 
-function makeProfileLink(account) {
-  const link = document.createElement("a");
-  link.className = "fediverse-profile";
-  link.href = holloPageUrl(new URL("/@blog", location.origin)).href;
-  link.textContent = `@blog@${location.host}`;
+// ヘッダーの Fediverse アカウントへのリンクに、フォロワー数を足す。
+// リンクはテンプレートが HTML に書いておくので、取得に失敗してもリンクは残る。
+function showFollowerCount(account) {
+  const followers = numberFormat.format(requiredCount(account.followers_count, "followers"));
+
+  let link = document.querySelector(".fediverse-profile");
+  if (!link) {
+    const menu = document.querySelector("#menu");
+    if (!menu) throw new Error("Could not find the site navigation menu");
+    link = document.createElement("a");
+    link.className = "fediverse-profile";
+    link.href = holloPageUrl(new URL("/@blog", location.origin)).href;
+    link.textContent = `@blog@${location.host}`;
+    const item = document.createElement("li");
+    item.append(link);
+    menu.append(item);
+  }
 
   const count = document.createElement("span");
   count.className = "fediverse-profile-count";
-  count.textContent = ` · フォロワー ${numberFormat.format(requiredCount(account.followers_count, "followers"))}`;
+  count.textContent = ` · フォロワー ${followers}`;
   link.append(count);
-
-  const menu = document.querySelector("#menu");
-  if (!menu) throw new Error("Could not find the site navigation menu");
-  const item = document.createElement("li");
-  item.append(link);
-  menu.append(item);
 }
 
 async function loadFollowers() {
@@ -134,7 +140,7 @@ async function loadFollowers() {
   accountUrl.searchParams.set("acct", `blog@${location.host}`);
   const account = await fetchJson(accountUrl);
   if (!isRecord(account)) throw new Error("Invalid Hollo account response");
-  makeProfileLink(account);
+  showFollowerCount(account);
 }
 
 function renderReactions(reactions) {
